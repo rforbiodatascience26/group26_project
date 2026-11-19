@@ -1,0 +1,309 @@
+---
+title: "data_wrangling"
+format: html
+---
+
+# **Exploring gene expression patterns in male and female patients with acute myeloid leukemia using TCGA data**
+
+## Loading libraries
+
+```{r}
+#| message: false
+
+library("tidyverse")
+```
+
+## Loading the data
+
+```{r}
+laml_metadata <- readRDS(
+  file = "data/raw/laml_metadata.rds")
+
+laml_expression <- readRDS(
+  file = "data/raw/laml_counts.rds")
+```
+
+## Data description
+
+### Metadata
+
+```{r}
+# Inspect the metadata
+glimpse(laml_metadata)
+
+# Number of rows and columns
+dim(laml_metadata)
+
+# Variable names
+names(laml_metadata)
+```
+
+### Gene expression data
+
+```{r}
+# Inspect the expression data
+glimpse(laml_expression)
+
+# Number of rows and columns
+dim(laml_expression)
+
+# Variable names
+names(laml_expression)
+```
+
+The expression dataset contains gene identifiers and expression measurements for individual samples. Before reshaping the data, I inspect the distribution of expression values to get an overview of their scale.
+
+```{r}
+# Inspect the distribution of expression values for the first sample
+summary(laml_expression[[2]])
+```
+
+The expression values in the first sample range from 0 to 19.323. The median is 1.585, while the mean is 3.310, suggesting a right-skewed distribution. The first quartile is zero, indicating that at least 25% of the expression values are zero. The decimal values suggest that the data are not untransformed integer counts. However, the exact transformation or normalisation cannot be established from this inspection alone.
+
+#### Checking gene identifiers
+
+Before reshaping the expression dataset, I check whether the gene identifiers are missing or duplicated. Each gene should be identifiable in the expression dataset so that the measurements can be associated with the correct gene.
+
+```{r}
+# Check the completeness and uniqueness of gene identifiers
+laml_expression |>
+  summarise(
+    total_rows = n(),
+    unique_gene_ids = n_distinct(Ensembl_ID),
+    missing_gene_ids = sum(is.na(Ensembl_ID))
+  )
+```
+
+The expression dataset contains 60,660 gene identifiers, all of which are unique. No missing gene identifiers were found. Therefore, no gene identifier cleaning or removal is necessary before reshaping the dataset.
+
+## Data wrangling
+
+### Checking and matching samples
+
+#### Checking for duplicate sample identifiers
+
+The metadata contains more rows than unique patient cases. Before removing any observations, I investigate whether sample identifiers occur more than once. This is important because multiple samples may belong to the same patient.
+
+```{r}
+# Count how many times each sample ID occurs
+laml_metadata |>
+  count(sample, sort = TRUE) |>
+  filter(n > 1)
+```
+
+No duplicate sample identifiers were found. However, the metadata contains 278 records representing 200 unique patients. This indicates that some patients have multiple samples. I therefore retain the sample-level records rather than removing observations based on patient ID.
+
+#### Checking missing values and gender distribution
+
+```{r}
+laml_metadata |>
+  summarise(
+    metadata_rows = n(),
+    unique_samples = n_distinct(sample),
+    unique_patients = n_distinct(submitter_id)
+  )
+```
+
+```{r}
+# Count missing values in selected metadata columns
+laml_metadata |>
+  summarise(
+    missing_gender = sum(is.na(gender.demographic)),
+    missing_age = sum(is.na(age_at_index.demographic)),
+    missing_sample = sum(is.na(sample))
+  )
+```
+
+```{r}
+# Count metadata records in each gender category
+laml_metadata |>
+  count(gender.demographic, sort = TRUE)
+```
+
+There are no missing values in the selected gender, age and sample identifier columns. The metadata contains 150 male and 128 female records. These counts describe the full metadata dataset; the gender distribution may change when the metadata is matched to the expression matrix.
+
+#### Matching metadata to expression samples
+
+```{r}
+expression_samples <- tibble(
+  sample = names(laml_expression)[-1]
+)
+```
+
+```{r}
+expression_samples |>
+  anti_join(laml_metadata, by = "sample")
+```
+
+```{r}
+laml_metadata |>
+  anti_join(expression_samples, by = "sample") |>
+  count(sample)
+```
+
+```{r}
+# Keep metadata records for samples present in the expression matrix
+laml_metadata_matched <- laml_metadata |>
+  semi_join(expression_samples, by = "sample")
+```
+
+```{r}
+# Check the number of samples and patients in the matched metadata
+laml_metadata_matched |>
+  summarise(
+    metadata_rows = n(),
+    unique_samples = n_distinct(sample),
+    unique_patients = n_distinct(submitter_id)
+  )
+```
+
+```{r}
+# Count gender categories among samples in the expression matrix
+laml_metadata_matched |>
+  count(gender.demographic, sort = TRUE)
+```
+
+After matching the metadata with the expression matrix, 151 metadata records remain, representing 151 unique samples and 151 unique patients. This means that each patient in the matched dataset contributes one sample. The gender distribution consists of 84 male and 67 female samples. This matched dataset will be used for the subsequent analysis to ensure that the metadata and gene expression measurements correspond to the same samples.
+
+### Reshaping expression data
+
+The expression dataset is organised in a wide format, where each row represents a gene and each sample has its own column. To prepare the data for subsequent analysis, I reshape the expression data into a long format and combine it with the corresponding patient metadata.
+
+#### Testing the reshaping and metadata join on a subset
+
+```{r}
+# Select 10 random genes to test the reshaping
+laml_expression_test <- laml_expression |>
+  slice_sample(n = 10)
+```
+
+```{r}
+# Reshape the expression data from wide to long format
+laml_expression_test_long <- laml_expression_test |>
+  pivot_longer(
+    cols = -Ensembl_ID,
+    names_to = "sample",
+    values_to = "expression"
+  )
+```
+
+```{r}
+# Inspect the reshaped expression data
+glimpse(laml_expression_test_long)
+
+# Check the number of rows and columns
+dim(laml_expression_test_long)
+```
+
+The reshaped dataset contains 1,510 rows and three columns. Each row represents the expression measurement of one gene in one sample. This long format makes it easier to combine the expression data with patient characteristics and prepare visualisations.
+
+To investigate gene expression patterns in relation to gender, I combine the expression data with the matched metadata. The sample identifier is used to connect the two datasets, and only the sample identifier and gender variable are selected from the metadata.
+
+```{r}
+# Add gender information to the expression data
+laml_expression_test_joined <- laml_expression_test_long |>
+  left_join(
+    laml_metadata_matched |>
+      select(sample, gender.demographic),
+    by = "sample"
+  )
+```
+
+```{r}
+# Inspect the joined dataset
+glimpse(laml_expression_test_joined)
+```
+
+```{r}
+# Count observations in each gender category
+laml_expression_test_joined |>
+  count(gender.demographic, sort = TRUE)
+```
+
+```{r}
+# Check for missing gender information after joining
+laml_expression_test_joined |>
+  summarise(
+    missing_gender = sum(is.na(gender.demographic))
+  )
+```
+
+The join resulted in a dataset with 1,510 rows and four columns. Gender information was successfully added to the expression data, with no missing gender values. The dataset contains 840 male and 670 female observations, corresponding to ten genes measured across 84 male and 67 female samples. This confirms that the expression data can be successfully combined with the matched metadata.
+
+The ten-gene subset was used only to test the data transformation and joining procedures. It will not be used for the final analysis.
+
+#### Reshaping the complete dataset
+
+After testing the reshaping procedure on a smaller subset, I apply the same transformation to the complete expression dataset. The data are converted from wide to long format, where each row represents one gene measured in one sample.
+
+```{r}
+# Reshape the complete expression dataset into long format
+laml_expression_long <- laml_expression |>
+  pivot_longer(
+    cols = -Ensembl_ID,
+    names_to = "sample",
+    values_to = "expression"
+  )
+```
+
+```{r}
+# Inspect the reshaped expression dataset
+glimpse(laml_expression_long)
+
+# Check the dimensions
+dim(laml_expression_long)
+```
+
+The complete expression dataset was successfully reshaped from wide to long format. The resulting dataset contains 9,159,660 rows and three columns. Each row represents the expression measurement of one gene in one sample. The dataset contains 60,660 unique genes measured across 151 samples.
+
+### Combining expression data with metadata
+
+After reshaping the expression data, I combine it with the matched metadata using the sample identifier. I select only the sample identifier and gender variable from the metadata, as these are the variables needed for the current project.
+
+```{r}
+# Add gender information to the complete expression dataset
+laml_expression_joined <- laml_expression_long |>
+  left_join(
+    laml_metadata_matched |>
+      select(sample, gender.demographic),
+    by = "sample"
+  )
+```
+
+```{r}
+# Check the joined dataset
+laml_expression_joined |>
+  summarise(
+    total_rows = n(),
+    unique_genes = n_distinct(Ensembl_ID),
+    unique_samples = n_distinct(sample),
+    missing_gender = sum(is.na(gender.demographic))
+  )
+```
+
+```{r}
+# Count expression observations by gender
+laml_expression_joined |>
+  count(gender.demographic, sort = TRUE)
+```
+
+### Saving processed data
+
+After reshaping the gene expression data and joining it with the matched metadata, the processed datasets are saved in the `data/processed/` folder. The original files in `data/raw/` are kept unchanged.
+
+```{r}
+# Create the processed data folder if it does not already exist
+dir.create("data/processed", recursive = TRUE, showWarnings = FALSE)
+
+# Save the matched metadata
+saveRDS(
+  laml_metadata_matched,
+  file = "data/processed/laml_metadata_matched.rds"
+)
+
+# Save the joined gene expression data
+saveRDS(
+  laml_expression_joined,
+  file = "data/processed/laml_expression_joined.rds"
+)
+```
