@@ -51,14 +51,14 @@ dim(laml_expression)
 names(laml_expression)
 ```
 
-The expression dataset contains gene identifiers and expression measurements for individual samples. Before preparing the data for visualisation, I inspect the distribution of expression values to better understand their scale.
+The expression dataset contains gene identifiers and expression measurements for individual samples. Before reshaping the data, I inspect the distribution of expression values to get an overview of their scale.
 
 ```{r}
 # Inspect the distribution of expression values for the first sample
 summary(laml_expression[[2]])
 ```
 
-The expression values in the first sample range from 0 to 19.323. The median is 1.585, while the mean is 3.310, suggesting a right-skewed distribution. The first quartile is zero, indicating that at least 25% of the expression values are zero. The values appear to be transformed rather than raw counts, so their original scale and processing will be considered when preparing the data for visualisation.
+The expression values in the first sample range from 0 to 19.323. The median is 1.585, while the mean is 3.310, suggesting a right-skewed distribution. The first quartile is zero, indicating that at least 25% of the expression values are zero. The decimal values suggest that the data are not untransformed integer counts. However, the exact transformation or normalisation cannot be established from this inspection alone.
 
 #### Checking gene identifiers
 
@@ -165,11 +165,11 @@ laml_metadata_matched |>
 
 After matching the metadata with the expression matrix, 151 metadata records remain, representing 151 unique samples and 151 unique patients. This means that each patient in the matched dataset contributes one sample. The gender distribution consists of 84 male and 67 female samples. This matched dataset will be used for the subsequent analysis to ensure that the metadata and gene expression measurements correspond to the same samples.
 
-### Reshaping and joining expression data
+### Reshaping expression data
 
 The expression dataset is organised in a wide format, where each row represents a gene and each sample has its own column. To prepare the data for subsequent analysis, I reshape the expression data into a long format and combine it with the corresponding patient metadata.
 
-#### Testing the metadata join
+#### Testing the reshaping and metadata join on a subset
 
 ```{r}
 # Select 10 random genes to test the reshaping
@@ -232,7 +232,7 @@ The join resulted in a dataset with 1,510 rows and four columns. Gender informat
 
 The ten-gene subset was used only to test the data transformation and joining procedures. It will not be used for the final analysis.
 
-#### Joining the data 
+#### Reshaping the complete dataset
 
 After testing the reshaping procedure on a smaller subset, I apply the same transformation to the complete expression dataset. The data are converted from wide to long format, where each row represents one gene measured in one sample.
 
