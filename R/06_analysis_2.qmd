@@ -1,6 +1,8 @@
 ---
 title: "Analysis 2: PCA"
 format: html
+execute:
+  warning: false
 ---
 
 ## Load libraries
@@ -13,7 +15,7 @@ library("broom")
 
 ## Load data
 
-The wide file has about 30,000 gene columns, so each line is longer than
+The wide file has about 16,600 gene columns, so each line is longer than
 the default read buffer. The buffer is increased before reading.
 
 ```{r}
@@ -53,6 +55,18 @@ ggsave("../results/06_pca_condition.png", pca_condition,
        width = 6, height = 5)
 ```
 
+The normal samples group together and are separated from the tumors
+along PC2. The tumor samples are much more spread out, so the tumors are
+more heterogeneous than the normal tissue.
+
+There is a group of tumors with high PC1 values that lies apart from the
+rest. It could be a subtype, but we did not look further into it. A few
+tumors are close to the normal samples, maybe because those samples contain
+a lot of normal tissue.
+
+So tumor vs normal is one of the main things that drives the variation in
+the data, which fits with the comparison we did in 05_analysis_1.
+
 ```{r}
 pca_gender <- pca_aug |>
   ggplot(aes(x = .fittedPC1, y = .fittedPC2, colour = gender)) +
@@ -67,11 +81,23 @@ ggsave("../results/06_pca_gender.png", pca_gender,
        width = 6, height = 5)
 ```
 
+Male and female samples are mixed together, so sex does not explain much
+of the variation. The two grey points are samples where sex is missing.
+
 ## Variance explained
 
 ```{r}
-pca_variance <- pca_fit |>
-  tidy(matrix = "eigenvalues") |>
+pca_eigen <- pca_fit |>
+  tidy(matrix = "eigenvalues")
+
+pct_pc1 <- pca_eigen |>
+  filter(PC == 1) |>
+  pull(percent)
+pct_pc2 <- pca_eigen |>
+  filter(PC == 2) |>
+  pull(percent)
+
+pca_variance <- pca_eigen |>
   filter(PC <= 10) |>
   ggplot(aes(x = PC, y = percent)) +
   geom_col(fill = "steelblue") +
@@ -87,3 +113,11 @@ pca_variance
 ggsave("../results/06_pca_variance.png", pca_variance,
        width = 6, height = 4)
 ```
+
+PC1 explains around `r round(100 * pct_pc1)`% of the variance and PC2
+around `r round(100 * pct_pc2)`%. The rest is
+spread over many components, which is normal for gene expression data.
+
+Dead end: before the CPM normalisation PC1 explained around 36% of the
+variance, but most of that came from the differences in sequencing depth
+between the samples.

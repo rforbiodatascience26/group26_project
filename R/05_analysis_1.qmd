@@ -1,6 +1,8 @@
 ---
 title: "Analysis 1: linear model per gene (tumor vs normal)"
 format: html
+execute:
+  warning: false
 ---
 
 ## Load libraries
@@ -14,7 +16,7 @@ library("ggrepel")
 
 ## Load data
 
-The wide file has about 30,000 gene columns, so each line is longer than
+The wide file has about 16,600 gene columns, so each line is longer than
 the default read buffer. The buffer is increased before reading.
 
 ```{r}
@@ -154,9 +156,11 @@ lm_results <- lm_results |>
                                     TRUE ~ "no"))
 ```
 
-Since the expression values are log2(count+1), the estimate can be read
-directly as the log2 fold change of tumor vs normal. E.g. an estimate of 2
-means about 4 times higher expression in tumor.
+The expression values are log2(CPM+1), i.e. normalised for library size,
+so differences in sequencing depth between samples are not read as
+differences in expression. The estimate can then be read directly as the
+log2 fold change of tumor vs normal. E.g. an estimate of 2 means about 4
+times higher expression in tumor.
 
 ## Direction of change
 
@@ -191,7 +195,26 @@ lm_summary <- lm_results |>
 lm_summary
 
 write_tsv(lm_summary, "../results/05_n_up_down.tsv")
+
+n_tested <- nrow(lm_results)
+n_down <- lm_results |>
+  filter(direction == "Down") |>
+  nrow()
+n_up <- lm_results |>
+  filter(direction == "Up") |>
+  nrow()
+pct_changed <- round(100 * (n_down + n_up) / n_tested)
 ```
+
+In total `r format(n_tested, big.mark = ",")` genes were tested. With
+q < 0.05 and |log2FC| > 1, `r format(n_down, big.mark = ",")` genes are down
+and `r format(n_up, big.mark = ",")` genes are up in tumor compared to
+normal. So around `r pct_changed`% of the genes change.
+
+Dead end: we first ran this without the CPM normalisation and got 7,164 down
+and 1,625 up genes. Nearly all genes looked lower in tumor, most likely
+because the normal samples were sequenced deeper, not because of biology.
+That is why we added the library size normalisation.
 
 ## Volcano plot
 
@@ -232,6 +255,30 @@ volcano_plot
 ggsave("../results/05_volcano.png", volcano_plot, width = 7, height = 5)
 ```
 
+One point is one gene. On the x axis is the log2 fold change (tumor vs
+normal), on the y axis -log10 of the q value, so higher means more
+significant. The dashed lines are the cut-offs we used (q < 0.05 and
+|log2FC| > 1).
+
+Some of the most significant down genes are BEST4 and GUCA2B. In the
+normal colon these are expressed by a specific cell type at the top of the
+crypts, the BEST4+/OTOP2+ cells, and this cell type is changed in
+inflammation and cancer (Parikh et al. 2019). GUCA2B codes for
+uroguanylin. The related hormone guanylin was lost in almost all colorectal
+tumors in Wilson et al. (2014). CA7 is also down, which fits with Yang et
+al. (2015), who found lower CA7 in colorectal cancer tissue, linked to
+poor differentiation.
+
+Among the up genes, CDH3 was higher in all tumors compared to normal colon
+in Kumara et al. (2017). KRT80 has been linked to migration and invasion
+of colorectal cancer (Li et al. 2018), and was the most upregulated gene in
+another TCGA RNA-seq study (Lin et al. 2020). ETV4 was overexpressed in
+colorectal adenocarcinoma and confirmed in TCGA (Fonseca et al. 2021).
+
+Our results are consistent with a loss of normal epithelial cell types in
+the tumors, in particular the BEST4+/OTOP2+ cells, but bulk RNA-seq cannot
+tell whether the cells are lost or only express these genes less.
+
 ## Forest plot of top genes
 
 ```{r}
@@ -253,3 +300,53 @@ forest_plot
 
 ggsave("../results/05_forest.png", forest_plot, width = 6, height = 4)
 ```
+
+Here we show the log2 fold change and the 95% confidence interval for the
+10 most significant genes. The intervals are narrow and none of them are
+close to 0, so the mean difference between tumor and normal is estimated
+precisely.
+
+## References
+
+Benjamini Y, Hochberg Y (1995). Controlling the false discovery rate: a
+practical and powerful approach to multiple testing. J R Stat Soc B
+57(1):289-300. doi:10.1111/j.2517-6161.1995.tb02031.x
+
+Cancer Genome Atlas Network (2012). Comprehensive molecular
+characterization of human colon and rectal cancer. Nature 487:330-337.
+
+Fonseca AS et al. (2021). ETV4 plays a role on the primary events during
+the adenoma-adenocarcinoma progression in colorectal cancer. BMC Cancer
+21:207. doi:10.1186/s12885-021-07857-x
+
+Goldman MJ et al. (2020). Visualizing and interpreting cancer genomics
+data via the Xena platform. Nat Biotechnol 38:675-678.
+doi:10.1038/s41587-020-0546-8
+
+Kumara HMCS et al. (2017). P-Cadherin (CDH3) is overexpressed in
+colorectal tumors and has potential as a serum marker for colorectal
+cancer monitoring. Oncoscience 4:139-147. doi:10.18632/oncoscience.370
+
+Li C et al. (2018). Keratin 80 promotes migration and invasion of
+colorectal carcinoma by interacting with PRKDC via activating the AKT
+pathway. Cell Death Dis 9:1009. doi:10.1038/s41419-018-1030-y
+
+Lin J et al. (2020). Small interfering RNA-mediated knockdown of KRT80
+suppresses colorectal cancer proliferation. Exp Ther Med 20:176.
+doi:10.3892/etm.2020.9306
+
+Parikh K et al. (2019). Colonic epithelial cell diversity in health and
+inflammatory bowel disease. Nature 567:49-55.
+doi:10.1038/s41586-019-0992-y
+
+Wilson C et al. (2014). The paracrine hormone for the GUCY2C tumor
+suppressor, guanylin, is universally lost in colorectal cancer. Cancer
+Epidemiol Biomarkers Prev 23(11):2328-2337.
+doi:10.1158/1055-9965.EPI-14-0440
+
+Yang GZ et al. (2015). Prognostic value of carbonic anhydrase VII
+expression in colorectal carcinoma. BMC Cancer 15:209.
+doi:10.1186/s12885-015-1216-y
+
+R packages: tidyverse, broom and ggrepel (see `citation("tidyverse")`,
+`citation("broom")` and `citation("ggrepel")`).
