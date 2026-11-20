@@ -1,0 +1,352 @@
+---
+title: "Analysis 1: linear model per gene (tumor vs normal)"
+format: html
+execute:
+  warning: false
+---
+
+## Load libraries
+
+```{r}
+#| message: false
+library("tidyverse")
+library("broom")
+library("ggrepel")
+```
+
+## Load data
+
+The wide file has about 16,600 gene columns, so each line is longer than
+the default read buffer. The buffer is increased before reading.
+
+```{r}
+#| message: false
+Sys.setenv("VROOM_CONNECTION_SIZE" = "5000000")
+
+dat <- read_tsv("../data/03_dat_aug.tsv.gz")
+
+probemap <- read_tsv(
+  "../data/_raw/gencode.v36.annotation.gtf.gene.probemap"
+) |>
+  select(gene = id,
+         symbol = gene)
+```
+
+## Paired or unpaired?
+
+How many patients have both a tumor and a normal sample. If 20 or more we go
+with the paired model.
+
+With exactly 2 samples per patient, `log2_expr ~ condition + patient` is in
+practice a paired t-test written as a linear model. The patient term removes
+the differences between patients, so the condition effect is estimated from
+the within-patient differences.
+(This should probably be moved to 04_describe.qmd later.)
+
+```{r}
+paired_patients <- dat |>
+  count(patient) |>
+  filter(n == 2)
+
+n_paired <- nrow(paired_patients)
+n_paired
+
+use_paired <- n_paired >= 20
+```
+
+## Condition as factor
+
+normal is the reference level, so the coefficient is tumor minus normal.
+
+```{r}
+dat <- dat |>
+  mutate(condition = factor(condition, levels = c("normal", "tumor")))
+
+if (use_paired) {
+  dat <- dat |>
+    semi_join(paired_patients, by = "patient")
+}
+```
+
+## Long format
+
+```{r}
+dat_long <- dat |>
+  pivot_longer(cols = starts_with("ENSG"),
+               names_to = "gene",
+               values_to = "log2_expr")
+```
+
+Test run on 100 random genes first. Set `test_run` to FALSE to run on all
+genes (remember to do this before the final render).
+
+```{r}
+test_run <- FALSE
+
+if (test_run) {
+  set.seed(42)
+  some_genes <- dat_long |>
+    distinct(gene) |>
+    slice_sample(n = 100)
+
+  dat_long <- dat_long |>
+    semi_join(some_genes, by = "gene")
+}
+```
+
+## Nest by gene
+
+```{r}
+dat_nested <- dat_long |>
+  group_by(gene) |>
+  nest()
+
+dat_nested
+```
+
+## One model per gene
+
+```{r}
+if (use_paired) {
+  model_formula <- log2_expr ~ condition + patient
+} else {
+  model_formula <- log2_expr ~ condition
+}
+
+dat_nested <- dat_nested |>
+  mutate(model_object = map(data,
+                            ~ lm(model_formula, data = .x)))
+```
+
+## Tidy the models
+
+```{r}
+dat_nested <- dat_nested |>
+  mutate(model_object_tidy = map(model_object,
+                                 ~ tidy(.x,
+                                        conf.int = TRUE,
+                                        conf.level = 0.95)))
+```
+
+## Unnest and keep the condition term
+
+```{r}
+lm_results <- dat_nested |>
+  unnest(model_object_tidy) |>
+  filter(term == "conditiontumor") |>
+  select(gene, estimate, std.error, statistic,
+         p.value, conf.low, conf.high) |>
+  ungroup()
+```
+
+## Add gene symbols
+
+```{r}
+lm_results <- lm_results |>
+  left_join(probemap, by = "gene") |>
+  relocate(symbol, .after = gene)
+```
+
+## Multiple testing
+
+```{r}
+lm_results <- lm_results |>
+  mutate(q_value = p.adjust(p.value, method = "fdr"),
+         is_significant = case_when(q_value < 0.05 ~ "yes",
+                                    TRUE ~ "no"))
+```
+
+The expression values are log2(CPM+1), i.e. normalised for library size,
+so differences in sequencing depth between samples are not read as
+differences in expression. The estimate can then be read directly as the
+log2 fold change of tumor vs normal. E.g. an estimate of 2 means about 4
+times higher expression in tumor.
+
+## Direction of change
+
+Up / Down if q < 0.05 and |log2FC| > 1, otherwise NS.
+
+```{r}
+lm_results <- lm_results |>
+  mutate(direction = case_when(q_value < 0.05 & estimate > 1 ~ "Up",
+                               q_value < 0.05 & estimate < -1 ~ "Down",
+                               TRUE ~ "NS"))
+
+lm_results
+```
+
+Check for q values that are rounded to 0 (they would give Inf in the
+volcano plot).
+
+```{r}
+lm_results |>
+  filter(q_value == 0) |>
+  count()
+```
+
+## Save results
+
+```{r}
+write_tsv(lm_results, "../data/05_dat_lm_results.tsv.gz")
+
+lm_summary <- lm_results |>
+  count(direction)
+
+lm_summary
+
+write_tsv(lm_summary, "../results/05_n_up_down.tsv")
+
+n_tested <- nrow(lm_results)
+n_down <- lm_results |>
+  filter(direction == "Down") |>
+  nrow()
+n_up <- lm_results |>
+  filter(direction == "Up") |>
+  nrow()
+pct_changed <- round(100 * (n_down + n_up) / n_tested)
+```
+
+In total `r format(n_tested, big.mark = ",")` genes were tested. With
+q < 0.05 and |log2FC| > 1, `r format(n_down, big.mark = ",")` genes are down
+and `r format(n_up, big.mark = ",")` genes are up in tumor compared to
+normal. So around `r pct_changed`% of the genes change.
+
+Dead end: we first ran this without the CPM normalisation and got 7,164 down
+and 1,625 up genes. Nearly all genes looked lower in tumor, most likely
+because the normal samples were sequenced deeper, not because of biology.
+That is why we added the library size normalisation.
+
+## Volcano plot
+
+Label the 10 significant genes with the lowest q value. If a gene has no
+symbol the Ensembl ID is used instead.
+
+```{r}
+top_genes <- lm_results |>
+  filter(direction != "NS") |>
+  arrange(q_value) |>
+  slice_head(n = 10)
+
+volcano_dat <- lm_results |>
+  mutate(label = case_when(gene %in% pull(top_genes, gene) ~
+                             coalesce(symbol, gene),
+                           TRUE ~ ""))
+
+volcano_plot <- volcano_dat |>
+  ggplot(aes(x = estimate,
+             y = -log10(pmax(q_value, 1e-300)),
+             colour = direction,
+             label = label)) +
+  geom_point(alpha = 0.5, size = 1) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+  geom_text_repel(size = 3, max.overlaps = 20, show.legend = FALSE) +
+  scale_colour_manual(values = c("Down" = "steelblue",
+                                 "NS" = "grey70",
+                                 "Up" = "firebrick")) +
+  labs(x = "log2 fold change (tumor vs normal)",
+       y = "-log10(q value)",
+       colour = "",
+       title = "Differential expression, tumor vs normal") +
+  theme_minimal()
+
+volcano_plot
+
+ggsave("../results/05_volcano.png", volcano_plot, width = 7, height = 5)
+```
+
+One point is one gene. On the x axis is the log2 fold change (tumor vs
+normal), on the y axis -log10 of the q value, so higher means more
+significant. The dashed lines are the cut-offs we used (q < 0.05 and
+|log2FC| > 1).
+
+Some of the most significant down genes are BEST4 and GUCA2B. In the
+normal colon these are expressed by a specific cell type at the top of the
+crypts, the BEST4+/OTOP2+ cells, and this cell type is changed in
+inflammation and cancer (Parikh et al. 2019). GUCA2B codes for
+uroguanylin. The related hormone guanylin was lost in almost all colorectal
+tumors in Wilson et al. (2014). CA7 is also down, which fits with Yang et
+al. (2015), who found lower CA7 in colorectal cancer tissue, linked to
+poor differentiation.
+
+Among the up genes, CDH3 was higher in all tumors compared to normal colon
+in Kumara et al. (2017). KRT80 has been linked to migration and invasion
+of colorectal cancer (Li et al. 2018), and was the most upregulated gene in
+another TCGA RNA-seq study (Lin et al. 2020). ETV4 was overexpressed in
+colorectal adenocarcinoma and confirmed in TCGA (Fonseca et al. 2021).
+
+Our results are consistent with a loss of normal epithelial cell types in
+the tumors, in particular the BEST4+/OTOP2+ cells, but bulk RNA-seq cannot
+tell whether the cells are lost or only express these genes less.
+
+## Forest plot of top genes
+
+```{r}
+forest_plot <- top_genes |>
+  mutate(symbol = coalesce(symbol, gene),
+         symbol = fct_reorder(symbol, estimate)) |>
+  ggplot(aes(x = estimate, y = symbol)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_point() +
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high),
+                orientation = "y",
+                width = 0.2) +
+  labs(x = "log2 fold change (95% CI)",
+       y = "",
+       title = "Top 10 significant genes") +
+  theme_minimal()
+
+forest_plot
+
+ggsave("../results/05_forest.png", forest_plot, width = 6, height = 4)
+```
+
+Here we show the log2 fold change and the 95% confidence interval for the
+10 most significant genes. The intervals are narrow and none of them are
+close to 0, so the mean difference between tumor and normal is estimated
+precisely.
+
+## References
+
+Benjamini Y, Hochberg Y (1995). Controlling the false discovery rate: a
+practical and powerful approach to multiple testing. J R Stat Soc B
+57(1):289-300. doi:10.1111/j.2517-6161.1995.tb02031.x
+
+Cancer Genome Atlas Network (2012). Comprehensive molecular
+characterization of human colon and rectal cancer. Nature 487:330-337.
+
+Fonseca AS et al. (2021). ETV4 plays a role on the primary events during
+the adenoma-adenocarcinoma progression in colorectal cancer. BMC Cancer
+21:207. doi:10.1186/s12885-021-07857-x
+
+Goldman MJ et al. (2020). Visualizing and interpreting cancer genomics
+data via the Xena platform. Nat Biotechnol 38:675-678.
+doi:10.1038/s41587-020-0546-8
+
+Kumara HMCS et al. (2017). P-Cadherin (CDH3) is overexpressed in
+colorectal tumors and has potential as a serum marker for colorectal
+cancer monitoring. Oncoscience 4:139-147. doi:10.18632/oncoscience.370
+
+Li C et al. (2018). Keratin 80 promotes migration and invasion of
+colorectal carcinoma by interacting with PRKDC via activating the AKT
+pathway. Cell Death Dis 9:1009. doi:10.1038/s41419-018-1030-y
+
+Lin J et al. (2020). Small interfering RNA-mediated knockdown of KRT80
+suppresses colorectal cancer proliferation. Exp Ther Med 20:176.
+doi:10.3892/etm.2020.9306
+
+Parikh K et al. (2019). Colonic epithelial cell diversity in health and
+inflammatory bowel disease. Nature 567:49-55.
+doi:10.1038/s41586-019-0992-y
+
+Wilson C et al. (2014). The paracrine hormone for the GUCY2C tumor
+suppressor, guanylin, is universally lost in colorectal cancer. Cancer
+Epidemiol Biomarkers Prev 23(11):2328-2337.
+doi:10.1158/1055-9965.EPI-14-0440
+
+Yang GZ et al. (2015). Prognostic value of carbonic anhydrase VII
+expression in colorectal carcinoma. BMC Cancer 15:209.
+doi:10.1186/s12885-015-1216-y
+
+R packages: tidyverse, broom and ggrepel (see `citation("tidyverse")`,
+`citation("broom")` and `citation("ggrepel")`).
