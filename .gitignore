@@ -2,3 +2,8 @@
 .Rhistory
 .RData
 .Ruserdata
+
+data/
+00_temp_dat_aug.R
+R/*_files/
+R/*.html
