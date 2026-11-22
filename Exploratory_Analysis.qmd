@@ -1,0 +1,323 @@
+---
+title: "Exploratory_Analysis"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+```
+
+## 1 Dataset Overview
+
+### 1.1 Inspecting the Dataset
+
+This section provides an initial overview of the TCGA-LAML dataset before and after data wrangling. We inspect the dimensions, column names, and first few rows of the gene-expression and clinical metadata datasets to understand their structure and verify the results of data processing.
+
+1\) laml_counts:
+
+```{r}
+# Load data
+raw_counts <- readRDS("data/raw/laml_counts.rds")
+
+# Check dimensions
+dim(raw_counts)
+
+# Check column names
+names(raw_counts)
+
+# Preview data
+head(raw_counts)
+```
+
+2\) laml_metadata:
+
+```{r}
+# Load metadata
+raw_metadata <- readRDS("data/raw/laml_metadata.rds")
+
+# Check dimensions
+dim(raw_metadata)
+
+# Check column names
+names(raw_metadata)
+
+# Preview data
+head(raw_metadata)
+```
+
+3\) laml_expression_joined:
+
+```{r}
+# Load processed expression data
+processed_expression <- readRDS("data/processed/laml_expression_joined.rds")
+
+# Check dimensions
+dim(processed_expression)
+
+# Check column names
+names(processed_expression)
+
+# Preview data
+head(processed_expression)
+```
+
+4\) laml_metadata_matched.rds
+
+```{r}
+# Load processed metadata
+processed_metadata <- readRDS("data/processed/laml_metadata_matched.rds")
+
+# Check dimensions
+dim(processed_metadata)
+
+# Check column names
+names(processed_metadata)
+
+# Preview data
+head(processed_metadata)
+```
+
+### 1.2 Dataset composition before and after matching:
+
+The original TCGA-LAML metadata and matched metadata were compared to examine how the dataset composition changed during sample matching. This comparison provides an overview of the number of metadata records available before and after alignment with the gene-expression samples.
+
+The original metadata contained 278 records, while the matched metadata contained 151 records. This corresponds to 127 fewer metadata records after matching.
+
+```{r}
+# Create a summary table containing metadata record counts
+sample_summary <- tibble(
+  stage = c("Before matching", "After matching"),
+  records = c(
+    nrow(raw_metadata),
+    nrow(processed_metadata)
+  )
+)
+
+# Display the summary table
+sample_summary
+
+# Visualize metadata records before and after matching
+ggplot(
+  sample_summary,
+  aes(x = stage, y = records, fill = stage)
+) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = records), vjust = -0.5) +
+  labs(
+    title = "Metadata Records Before and After Matching",
+    x = NULL,
+    y = "Number of metadata records"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+## Exploratory Data Analysis
+
+### 2.1 Patient Characteristics
+
+This section explores the demographic characteristics of the TCGA-LAML patients, focusing on gender distribution and age differences between male and female patients. These visualizations provide an overview of the study population and help identify potential demographic differences between the groups.
+
+#### 2.1.1 Gender Distribution
+
+To understand the composition of the TCGA-LAML cohort, we examined the distribution of male and female patients. A bar chart was used to visualize the number of samples in each gender group.
+
+```{r}
+# Create the gender distribution bar chart
+ggplot(processed_metadata,
+       aes(x = gender.demographic,
+           fill = gender.demographic)) +
+  geom_bar(width = 0.6) +
+  geom_text(
+    stat = "count",
+    aes(label = after_stat(count)),
+    vjust = -0.5
+  ) +
+  labs(
+    title = "Gender Distribution of AML Samples",
+    x = "Gender",
+    y = "Number of samples"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+#### 2.1.2 Age Distribution by Gender
+
+To explore age differences between male and female AML patients, we compared their age distributions using boxplots with individual data points. This allows us to examine the median age, variability, and potential outliers in each group.
+
+```{r}
+# Create the age distribution boxplot by gender
+ggplot(processed_metadata,
+       aes(x = gender.demographic,
+           y = age_at_index.demographic,
+           fill = gender.demographic)) +
+  geom_boxplot(width = 0.5, alpha = 0.6) +
+  geom_jitter(width = 0.15, alpha = 0.5, size = 1.5) +
+  labs(
+    title = "Age Distribution of AML Patients by Gender",
+    x = "Gender",
+    y = "Age (years)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+### 2.2 Gene-Expression Distributions
+
+To compare gene-expression characteristics between male and female AML samples, we calculated the median expression across all genes for each sample. Density plots were then used to compare the distributions of these sample-level medians between the two groups.
+
+```{r}
+# Calculate the median expression for each sample
+sample_expression <- processed_expression |>
+  group_by(sample, gender.demographic) |>
+  summarise(
+    median_expression = median(expression, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Visualize the distribution of sample-level medians
+ggplot(
+  sample_expression,
+  aes(
+    x = median_expression,
+    fill = gender.demographic,
+    color = gender.demographic
+  )
+) +
+  geom_density(alpha = 0.3, linewidth = 1) +
+  labs(
+    title = "Distribution of Sample-Level Gene Expression",
+    subtitle = "Median expression per sample, grouped by gender",
+    x = "Median gene expression (dataset scale)",
+    y = "Density",
+    fill = "Gender",
+    color = "Gender"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+The distributions of sample-level median gene expression largely overlapped between male and female samples, suggesting similar distributions of median expression across the two groups. Both distributions showed two prominent peaks, with only minor differences at higher expression values. However, similarities in sample-level medians do not rule out differences in the expression of individual genes.
+
+### 2.3 Highly Variable Gene Expression Heatmap
+
+This step identifies the 50 most variable genes in the dataset and prepares the values for visualization. First, the variance of each gene is calculated across all samples. Then, the 50 genes with the highest variance are selected. Their expression values are standardized gene by gene, and the mean standardized expression is calculated separately for male and female samples.
+
+```{r}
+#| warning: false
+
+# Calculate expression variance for each gene
+gene_variability <- processed_expression |>
+  group_by(Ensembl_ID) |>
+  summarise(
+    variance = var(expression, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Select the 50 genes with the highest variance
+top_50_genes <- gene_variability |>
+  arrange(desc(variance)) |>
+  slice_head(n = 50)
+
+# Keep expression measurements for the selected genes
+selected_expression <- processed_expression |>
+  filter(
+    Ensembl_ID %in% top_50_genes$Ensembl_ID,
+    !is.na(gender.demographic)
+  )
+
+# Standardize expression separately for each gene
+selected_expression <- selected_expression |>
+  group_by(Ensembl_ID) |>
+  mutate(
+    expression_scaled =
+      (expression - mean(expression, na.rm = TRUE)) /
+      sd(expression, na.rm = TRUE)
+  ) |>
+  ungroup()
+
+# Calculate mean standardized expression by gender
+gender_heatmap <- selected_expression |>
+  group_by(Ensembl_ID, gender.demographic) |>
+  summarise(
+    mean_scaled_expression = mean(
+      expression_scaled,
+      na.rm = TRUE
+    ),
+    .groups = "drop"
+  )
+
+# Order genes by decreasing variance
+gender_heatmap <- gender_heatmap |>
+  mutate(
+    Ensembl_ID = factor(
+      Ensembl_ID,
+      levels = rev(top_50_genes$Ensembl_ID)
+    )
+  )
+
+```
+
+In the heatmap, each row represents one of the selected genes and each column represents one gender group. The color of each cell shows the mean standardized expression level of that gene in males or females. Blue indicates relatively lower expression, white indicates expression close to the overall mean, and red indicates relatively higher expression.
+
+```{r}
+#| fig-width: 9
+#| fig-height: 14
+#| fig-align: center
+#| out-width: 100%
+#| warning: false
+
+# Remove version suffixes and order genes by variance
+gender_heatmap <- gender_heatmap |>
+  mutate(
+    # Remove version suffixes, e.g. ENSG00000129824.16 -> ENSG00000129824
+    gene_label = sub("\\..*$", "", as.character(Ensembl_ID)),
+
+    # Display genes in decreasing order of variance
+    gene_label = factor(
+      gene_label,
+      levels = rev(sub("\\..*$", "", top_50_genes$Ensembl_ID))
+    )
+  )
+
+# Create the heatmap
+ggplot(
+  gender_heatmap,
+  aes(
+    x = gender.demographic,
+    y = gene_label,
+    fill = mean_scaled_expression
+  )
+) +
+  geom_tile(
+    color = "white",
+    linewidth = 0.3
+  ) +
+  scale_fill_gradient2(
+    low = "#4575B4",
+    mid = "white",
+    high = "#D73027",
+    midpoint = 0,
+    name = "Mean scaled\nexpression"
+  ) +
+  labs(
+    title = "Highly Variable Gene Expression in TCGA-LAML",
+    subtitle = "Top 50 genes: mean standardized expression by gender",
+    x = "Gender",
+    y = "Ensembl gene ID"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.y = element_text(size = 8),
+    axis.text.x = element_text(size = 11),
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 10),
+    legend.position = "right"
+  )
+
+```
+
+The heatmap illustrates the mean standardized expression of the 50 most variable genes in male and female AML samples. Several genes show differences in average expression between the two groups, suggesting potential gender-associated expression patterns. However, these results are exploratory, as the genes were selected based on overall variability rather than statistical significance. Further differential-expression analysis is required to evaluate these differences.
