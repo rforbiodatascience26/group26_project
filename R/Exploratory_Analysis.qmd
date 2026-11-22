@@ -19,7 +19,7 @@ This section provides an initial overview of the TCGA-LAML dataset before and af
 
 ```{r}
 # Load data
-raw_counts <- readRDS("data/raw/laml_counts.rds")
+raw_counts <- readRDS("../data/raw/laml_counts.rds")
 
 # Check dimensions
 dim(raw_counts)
@@ -35,7 +35,7 @@ head(raw_counts)
 
 ```{r}
 # Load metadata
-raw_metadata <- readRDS("data/raw/laml_metadata.rds")
+raw_metadata <- readRDS("../data/raw/laml_metadata.rds")
 
 # Check dimensions
 dim(raw_metadata)
@@ -51,7 +51,7 @@ head(raw_metadata)
 
 ```{r}
 # Load processed expression data
-processed_expression <- readRDS("data/processed/laml_expression_joined.rds")
+processed_expression <- readRDS("../data/processed/laml_expression_joined.rds")
 
 # Check dimensions
 dim(processed_expression)
@@ -67,7 +67,7 @@ head(processed_expression)
 
 ```{r}
 # Load processed metadata
-processed_metadata <- readRDS("data/processed/laml_metadata_matched.rds")
+processed_metadata <- readRDS("../data/processed/laml_metadata_matched.rds")
 
 # Check dimensions
 dim(processed_metadata)
