@@ -1,5 +1,5 @@
 ---
-title: "Analysis 1: linear model per gene (tumor vs normal)"
+title: "Analysis 1: linear model per gene (male vs female)"
 format: html
 execute:
   warning: false
@@ -14,10 +14,19 @@ library("broom")
 library("ggrepel")
 ```
 
+## Data
+
+We use the TCGA acute myeloid leukemia cohort (TCGA-LAML; Cancer Genome
+Atlas Research Network 2013). The files were downloaded from the GDC hub on
+UCSC Xena (Goldman et al. 2020).
+
 ## Load data
 
-The wide file has about 16,600 gene columns, so each line is longer than
-the default read buffer. The buffer is increased before reading.
+The wide file has around 20,000 gene columns, so one line does not fit in
+the default read buffer. We make the buffer bigger before reading.
+
+From the probemap we take the gene symbol and the chromosome. We need the
+chromosome later to split the genes on X and Y from the autosomal ones.
 
 ```{r}
 #| message: false
@@ -29,43 +38,26 @@ probemap <- read_tsv(
   "../data/_raw/gencode.v36.annotation.gtf.gene.probemap"
 ) |>
   select(gene = id,
-         symbol = gene)
+         symbol = gene,
+         chrom)
 ```
 
-## Paired or unpaired?
+## Model
 
-How many patients have both a tumor and a normal sample. If 20 or more we go
-with the paired model.
+Every patient has only one sample, so the design is not paired. For each
+gene we fit `log2_expr ~ gender + age`. We add age as a covariate, so that
+an age difference between the two groups does not show up as a gender
+effect.
 
-With exactly 2 samples per patient, `log2_expr ~ condition + patient` is in
-practice a paired t-test written as a linear model. The patient term removes
-the differences between patients, so the condition effect is estimated from
-the within-patient differences.
-(This should probably be moved to 04_describe.qmd later.)
-
-```{r}
-paired_patients <- dat |>
-  count(patient) |>
-  filter(n == 2)
-
-n_paired <- nrow(paired_patients)
-n_paired
-
-use_paired <- n_paired >= 20
-```
-
-## Condition as factor
-
-normal is the reference level, so the coefficient is tumor minus normal.
+female is the reference level, which means the gender coefficient is male
+minus female.
 
 ```{r}
 dat <- dat |>
-  mutate(condition = factor(condition, levels = c("normal", "tumor")))
+  mutate(gender = factor(gender, levels = c("female", "male")))
 
-if (use_paired) {
-  dat <- dat |>
-    semi_join(paired_patients, by = "patient")
-}
+dat |>
+  count(gender)
 ```
 
 ## Long format
@@ -77,8 +69,8 @@ dat_long <- dat |>
                values_to = "log2_expr")
 ```
 
-Test run on 100 random genes first. Set `test_run` to FALSE to run on all
-genes (remember to do this before the final render).
+For testing we can run on 100 random genes only. With `test_run` set to
+FALSE all genes are used (this has to be FALSE in the final render).
 
 ```{r}
 test_run <- FALSE
@@ -107,15 +99,9 @@ dat_nested
 ## One model per gene
 
 ```{r}
-if (use_paired) {
-  model_formula <- log2_expr ~ condition + patient
-} else {
-  model_formula <- log2_expr ~ condition
-}
-
 dat_nested <- dat_nested |>
   mutate(model_object = map(data,
-                            ~ lm(model_formula, data = .x)))
+                            ~ lm(log2_expr ~ gender + age, data = .x)))
 ```
 
 ## Tidy the models
@@ -128,23 +114,28 @@ dat_nested <- dat_nested |>
                                         conf.level = 0.95)))
 ```
 
-## Unnest and keep the condition term
+## Unnest and keep the gender term
 
 ```{r}
 lm_results <- dat_nested |>
   unnest(model_object_tidy) |>
-  filter(term == "conditiontumor") |>
+  filter(term == "gendermale") |>
   select(gene, estimate, std.error, statistic,
          p.value, conf.low, conf.high) |>
   ungroup()
 ```
 
-## Add gene symbols
+## Add gene symbols and chromosome
 
 ```{r}
 lm_results <- lm_results |>
   left_join(probemap, by = "gene") |>
-  relocate(symbol, .after = gene)
+  mutate(sex_chrom = chrom %in% c("chrX", "chrY")) |>
+  relocate(symbol, chrom, sex_chrom, .after = gene)
+
+lm_results |>
+  filter(is.na(symbol)) |>
+  count(name = "n_without_symbol")
 ```
 
 ## Multiple testing
@@ -156,15 +147,14 @@ lm_results <- lm_results |>
                                     TRUE ~ "no"))
 ```
 
-The expression values are log2(CPM+1), i.e. normalised for library size,
-so differences in sequencing depth between samples are not read as
-differences in expression. The estimate can then be read directly as the
-log2 fold change of tumor vs normal. E.g. an estimate of 2 means about 4
-times higher expression in tumor.
+The values are log2(CPM+1), so they are already normalised for library
+size. This means the estimate is the log2 fold change of male vs female,
+e.g. an estimate of 2 is roughly 4 times higher expression in males.
 
 ## Direction of change
 
-Up / Down if q < 0.05 and |log2FC| > 1, otherwise NS.
+A gene is Up or Down if q < 0.05 and |log2FC| > 1, otherwise it is NS.
+Up is higher in males and Down is higher in females.
 
 ```{r}
 lm_results <- lm_results |>
@@ -175,8 +165,8 @@ lm_results <- lm_results |>
 lm_results
 ```
 
-Check for q values that are rounded to 0 (they would give Inf in the
-volcano plot).
+Here we check if any q values are rounded to 0, since -log10(0) is Inf
+and those points would be lost in the volcano plot.
 
 ```{r}
 lm_results |>
@@ -190,36 +180,44 @@ lm_results |>
 write_tsv(lm_results, "../data/05_dat_lm_results.tsv.gz")
 
 lm_summary <- lm_results |>
-  count(direction)
+  count(direction, sex_chrom)
 
 lm_summary
 
 write_tsv(lm_summary, "../results/05_n_up_down.tsv")
 
 n_tested <- nrow(lm_results)
-n_down <- lm_results |>
-  filter(direction == "Down") |>
+n_changed <- lm_results |>
+  filter(direction != "NS") |>
   nrow()
-n_up <- lm_results |>
-  filter(direction == "Up") |>
+n_changed_sex <- lm_results |>
+  filter(direction != "NS",
+         sex_chrom) |>
   nrow()
-pct_changed <- round(100 * (n_down + n_up) / n_tested)
+n_signif_auto <- lm_results |>
+  filter(q_value < 0.05,
+         !sex_chrom) |>
+  nrow()
+auto_changed <- lm_results |>
+  filter(direction != "NS",
+         !sex_chrom) |>
+  pull(symbol)
+n_rps4x_pseudo <- lm_results |>
+  filter(q_value < 0.05,
+         !sex_chrom,
+         str_detect(symbol, "^RPS4XP")) |>
+  nrow()
 ```
 
-In total `r format(n_tested, big.mark = ",")` genes were tested. With
-q < 0.05 and |log2FC| > 1, `r format(n_down, big.mark = ",")` genes are down
-and `r format(n_up, big.mark = ",")` genes are up in tumor compared to
-normal. So around `r pct_changed`% of the genes change.
-
-Dead end: we first ran this without the CPM normalisation and got 7,164 down
-and 1,625 up genes. Nearly all genes looked lower in tumor, most likely
-because the normal samples were sequenced deeper, not because of biology.
-That is why we added the library size normalisation.
+We tested `r format(n_tested, big.mark = ",")` genes in total. Using
+q < 0.05 and |log2FC| > 1, `r n_changed` genes are different between males
+and females, and `r n_changed_sex` of these are on X or Y. If we drop the
+fold change cut-off, `r n_signif_auto` autosomal genes have q < 0.05.
 
 ## Volcano plot
 
-Label the 10 significant genes with the lowest q value. If a gene has no
-symbol the Ensembl ID is used instead.
+We label the 10 significant genes with the lowest q value and also the
+significant autosomal genes. Genes without a symbol get their Ensembl ID.
 
 ```{r}
 top_genes <- lm_results |>
@@ -228,26 +226,37 @@ top_genes <- lm_results |>
   slice_head(n = 10)
 
 volcano_dat <- lm_results |>
-  mutate(label = case_when(gene %in% pull(top_genes, gene) ~
+  mutate(gene_group = case_when(direction == "NS" ~ "Not significant",
+                                sex_chrom ~ "Significant, X/Y",
+                                TRUE ~ "Significant, autosomal"),
+         label = case_when(gene %in% pull(top_genes, gene) |
+                             gene_group == "Significant, autosomal" ~
                              coalesce(symbol, gene),
                            TRUE ~ ""))
 
 volcano_plot <- volcano_dat |>
   ggplot(aes(x = estimate,
              y = -log10(pmax(q_value, 1e-300)),
-             colour = direction,
+             colour = gene_group,
              label = label)) +
   geom_point(alpha = 0.5, size = 1) +
+  geom_point(data = volcano_dat |>
+               filter(gene_group == "Significant, autosomal"),
+             size = 2.5) +
   geom_vline(xintercept = c(-1, 1), linetype = "dashed") +
   geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
-  geom_text_repel(size = 3, max.overlaps = 20, show.legend = FALSE) +
-  scale_colour_manual(values = c("Down" = "steelblue",
-                                 "NS" = "grey70",
-                                 "Up" = "firebrick")) +
-  labs(x = "log2 fold change (tumor vs normal)",
+  geom_text_repel(data = volcano_dat |>
+                    filter(label != ""),
+                  size = 3,
+                  max.overlaps = Inf,
+                  show.legend = FALSE) +
+  scale_colour_manual(values = c("Not significant" = "grey70",
+                                 "Significant, X/Y" = "firebrick",
+                                 "Significant, autosomal" = "steelblue")) +
+  labs(x = "log2 fold change (male vs female)",
        y = "-log10(q value)",
        colour = "",
-       title = "Differential expression, tumor vs normal") +
+       title = "Differential expression, male vs female (AML)") +
   theme_minimal()
 
 volcano_plot
@@ -255,45 +264,48 @@ volcano_plot
 ggsave("../results/05_volcano.png", volcano_plot, width = 7, height = 5)
 ```
 
-One point is one gene. On the x axis is the log2 fold change (tumor vs
-normal), on the y axis -log10 of the q value, so higher means more
+One point is one gene. On the x axis is the log2 fold change (male vs
+female), on the y axis -log10 of the q value, so higher up means more
 significant. The dashed lines are the cut-offs we used (q < 0.05 and
-|log2FC| > 1).
+|log2FC| > 1). The grey points do not pass both cut-offs. Some of them do
+have q < 0.05, but their fold change is smaller than 2.
 
-Some of the most significant down genes are BEST4 and GUCA2B. In the
-normal colon these are expressed by a specific cell type at the top of the
-crypts, the BEST4+/OTOP2+ cells, and this cell type is changed in
-inflammation and cancer (Parikh et al. 2019). GUCA2B codes for
-uroguanylin. The related hormone guanylin was lost in almost all colorectal
-tumors in Wilson et al. (2014). CA7 is also down, which fits with Yang et
-al. (2015), who found lower CA7 in colorectal cancer tissue, linked to
-poor differentiation.
+Nearly all the genes with a big difference are on the sex chromosomes.
+XIST, which comes from the inactive X, is much higher in females. Y genes
+like DDX3Y, KDM5D, UTY and RPS4Y1 are higher in males. We expected this,
+because XIST and Y genes like RPS4Y1 are used as sex markers in RNA data
+(van den Berge and Sijen 2017). So it is also a good check that the
+analysis and the sex labels of the samples are right. Only one autosomal
+gene passes both cut-offs (`r auto_changed`), and it is labelled in the
+plot.
 
-Among the up genes, CDH3 was higher in all tumors compared to normal colon
-in Kumara et al. (2017). KRT80 has been linked to migration and invasion
-of colorectal cancer (Li et al. 2018), and was the most upregulated gene in
-another TCGA RNA-seq study (Lin et al. 2020). ETV4 was overexpressed in
-colorectal adenocarcinoma and confirmed in TCGA (Fonseca et al. 2021).
+## Forest plot of top autosomal genes
 
-Our results are consistent with a loss of normal epithelial cell types in
-the tumors, in particular the BEST4+/OTOP2+ cells, but bulk RNA-seq cannot
-tell whether the cells are lost or only express these genes less.
-
-## Forest plot of top genes
+We expect the biggest differences to be on X and Y. To see
+if anything happens in the rest of the genome, we plot the 10 autosomal
+genes with the lowest q value.
 
 ```{r}
-forest_plot <- top_genes |>
+top_auto <- lm_results |>
+  filter(!sex_chrom) |>
+  arrange(q_value) |>
+  slice_head(n = 10)
+
+forest_plot <- top_auto |>
   mutate(symbol = coalesce(symbol, gene),
          symbol = fct_reorder(symbol, estimate)) |>
-  ggplot(aes(x = estimate, y = symbol)) +
+  ggplot(aes(x = estimate, y = symbol, colour = is_significant)) +
   geom_vline(xintercept = 0, linetype = "dashed") +
   geom_point() +
   geom_errorbar(aes(xmin = conf.low, xmax = conf.high),
                 orientation = "y",
                 width = 0.2) +
-  labs(x = "log2 fold change (95% CI)",
+  scale_colour_manual(values = c("no" = "grey50",
+                                 "yes" = "steelblue")) +
+  labs(x = "log2 fold change, male vs female (95% CI)",
        y = "",
-       title = "Top 10 significant genes") +
+       colour = "q < 0.05",
+       title = "Top 10 autosomal genes") +
   theme_minimal()
 
 forest_plot
@@ -301,52 +313,57 @@ forest_plot
 ggsave("../results/05_forest.png", forest_plot, width = 6, height = 4)
 ```
 
-Here we show the log2 fold change and the 95% confidence interval for the
-10 most significant genes. The intervals are narrow and none of them are
-close to 0, so the mean difference between tumor and normal is estimated
-precisely.
+`r n_signif_auto` autosomal genes have q < 0.05, but for most of them the
+fold change is small. `r n_rps4x_pseudo` of these are RPS4X pseudogenes.
+Their sequence is very close to RPS4X on X and RPS4Y1 on Y, so we think the
+signal most likely comes from reads of the sex chromosome genes that map to
+the pseudogenes, and not from a real difference on the autosomes. Reads
+that map to more than one place, for example to a gene and its processed
+pseudogene, are known to make genes look expressed when they are not
+(Zhang et al. 2013).
+
+So in our cohort the expression differences between males and females are found
+almost only on the sex chromosomes.
+
+## Limitations
+
+Other studies did find sex differences in AML, for example in which
+mutations occur together and in gene expression inside mutation groups
+(Hellesøy et al. 2021; Ozga et al. 2024). They had bigger cohorts and
+looked within genetic subgroups, like patients with FLT3-ITD. We compare
+all 151 patients in one model and we have no mutation data, so if a
+difference only exists inside a subgroup we would not see it.
 
 ## References
+
+Cancer Genome Atlas Research Network (2013). Genomic and epigenomic
+landscapes of adult de novo acute myeloid leukemia. N Engl J Med
+368(22):2059-2074. doi:10.1056/NEJMoa1301689
 
 Benjamini Y, Hochberg Y (1995). Controlling the false discovery rate: a
 practical and powerful approach to multiple testing. J R Stat Soc B
 57(1):289-300. doi:10.1111/j.2517-6161.1995.tb02031.x
 
-Cancer Genome Atlas Network (2012). Comprehensive molecular
-characterization of human colon and rectal cancer. Nature 487:330-337.
-
-Fonseca AS et al. (2021). ETV4 plays a role on the primary events during
-the adenoma-adenocarcinoma progression in colorectal cancer. BMC Cancer
-21:207. doi:10.1186/s12885-021-07857-x
-
 Goldman MJ et al. (2020). Visualizing and interpreting cancer genomics
 data via the Xena platform. Nat Biotechnol 38:675-678.
 doi:10.1038/s41587-020-0546-8
 
-Kumara HMCS et al. (2017). P-Cadherin (CDH3) is overexpressed in
-colorectal tumors and has potential as a serum marker for colorectal
-cancer monitoring. Oncoscience 4:139-147. doi:10.18632/oncoscience.370
+Hellesøy M et al. (2021). Sex disparity in acute myeloid leukaemia with
+FLT3 internal tandem duplication mutations: implications for prognosis.
+Mol Oncol 15(9):2285-2299. doi:10.1002/1878-0261.13035
 
-Li C et al. (2018). Keratin 80 promotes migration and invasion of
-colorectal carcinoma by interacting with PRKDC via activating the AKT
-pathway. Cell Death Dis 9:1009. doi:10.1038/s41419-018-1030-y
+Ozga M et al. (2024). Sex-associated differences in frequencies and
+prognostic impact of recurrent genetic alterations in adult acute myeloid
+leukemia (Alliance, AMLCG). Leukemia 38:45-57.
+doi:10.1038/s41375-023-02068-8
 
-Lin J et al. (2020). Small interfering RNA-mediated knockdown of KRT80
-suppresses colorectal cancer proliferation. Exp Ther Med 20:176.
-doi:10.3892/etm.2020.9306
+van den Berge M, Sijen T (2017). A male and female RNA marker to infer sex
+in forensic analysis. Forensic Sci Int Genet 26:70-76.
 
-Parikh K et al. (2019). Colonic epithelial cell diversity in health and
-inflammatory bowel disease. Nature 567:49-55.
-doi:10.1038/s41586-019-0992-y
-
-Wilson C et al. (2014). The paracrine hormone for the GUCY2C tumor
-suppressor, guanylin, is universally lost in colorectal cancer. Cancer
-Epidemiol Biomarkers Prev 23(11):2328-2337.
-doi:10.1158/1055-9965.EPI-14-0440
-
-Yang GZ et al. (2015). Prognostic value of carbonic anhydrase VII
-expression in colorectal carcinoma. BMC Cancer 15:209.
-doi:10.1186/s12885-015-1216-y
+Zhang Z et al. (2013). GeneScissors: a comprehensive approach to detecting
+and correcting spurious transcriptome inference owing to RNA-seq reads
+misalignment. Bioinformatics 29(13):i291-i299.
+doi:10.1093/bioinformatics/btt216
 
 R packages: tidyverse, broom and ggrepel (see `citation("tidyverse")`,
 `citation("broom")` and `citation("ggrepel")`).

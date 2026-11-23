@@ -1,4 +1,6 @@
-direction	n
-Down	1525
-NS	13610
-Up	1488
+direction	sex_chrom	n
+Down	FALSE	1
+Down	TRUE	2
+NS	FALSE	19768
+NS	TRUE	623
+Up	TRUE	22
