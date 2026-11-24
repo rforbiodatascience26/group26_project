@@ -3,9 +3,6 @@ title: "Augment: normalised expression per sample"
 format: html
 execute:
   warning: false
-editor: 
-  markdown: 
-    wrap: 72
 ---
 
 ## Load libraries
@@ -19,10 +16,10 @@ library("tidyverse")
 
 We start from the wrangled files in `data/processed/`:
 
--   `laml_expression_joined.rds`: one row per gene per sample, with the
-    expression on the log2(count + 1) scale (60,660 genes, 151 samples)
--   `laml_metadata_matched.rds`: one row per sample, for the same 151
-    samples
+- `laml_expression_joined.rds`: one row per gene per sample, with the
+  expression on the log2(count + 1) scale (60,660 genes, 151 samples)
+- `laml_metadata_matched.rds`: one row per sample, for the same 151
+  samples
 
 ```{r}
 expr_long <- read_rds("../data/processed/laml_expression_joined.rds") |>
@@ -48,8 +45,7 @@ samples |>
 
 ## Check the scale of the values
 
-If the values are log2(count + 1), then 2\^x - 1 should give whole
-numbers.
+If the values are log2(count + 1), then 2^x - 1 should give whole numbers.
 
 ```{r}
 set.seed(42)
@@ -63,10 +59,10 @@ expr_long |>
 ## Normalise for library size
 
 Samples are sequenced to different depths, so the raw counts are not
-comparable between samples. We go back to raw counts, divide by the
-total number of counts in each sample (counts per million, CPM) and take
-log2(CPM + 1). The library size is computed on all genes, before the low
-expression filter.
+comparable between samples. We go back to raw counts, divide by the total
+number of counts in each sample (counts per million, CPM) and take
+log2(CPM + 1). The library size is computed on all genes, before the
+low expression filter.
 
 ```{r}
 expr_long <- expr_long |>
@@ -80,9 +76,9 @@ expr_long <- expr_long |>
 
 ## Remove genes with low expression
 
-Genes that are hardly expressed only add noise and make the per-gene
-models slower. We keep genes with log2(CPM + 1) \> 1 in at least 20% of
-the samples.
+Genes that are hardly expressed only add noise and make the per-gene models
+slower. We keep genes with log2(CPM + 1) > 1 in at least 20% of the
+samples.
 
 ```{r}
 genes_to_keep <- expr_long |>
@@ -101,8 +97,8 @@ n_genes_after <- nrow(genes_to_keep)
 
 ## One row per sample
 
-The analyses need one row per sample and one column per gene, joined
-with the sample information.
+The analyses need one row per sample and one column per gene, joined with
+the sample information.
 
 ```{r}
 dat_aug <- expr_long |>
@@ -129,5 +125,5 @@ dat_aug |>
 ## Save
 
 ```{r}
-write_tsv(dat_aug, "../data/processed/03_dat_aug.tsv.gz")
+write_tsv(dat_aug, "../data/03_dat_aug.tsv.gz")
 ```
