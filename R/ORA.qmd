@@ -16,32 +16,44 @@ library("msigdbr")
 The analysis is done on the results of the differential expression analysis
 
 ```{r}
-#lm_results <- read_tsv("../data/05_dat_lm_results.tsv.gz")
+lm_results <- read_tsv("../data/processed/05_dat_lm_results.tsv.gz")
 
-lm_results |> 
-  count(is_significant, sex_chrom)
+
 ```
+
+## DEGs and background
+
+I create two different datasets, one containing the differential expressed genes and one containing the background
+
+```{r}
+deg_genes <- lm_results |> 
+  filter(q_value < 0.05) |> 
+  pull(gene) |>
+  unique()
+
+background_genes <- lm_results |>
+  pull(gene) |>
+  unique()
+
+length(deg_genes)
+length(background_genes)
+```
+
+The DE genes are 53, all the genes tested are 20416.
+
+## Gene sets
 
 ```{r}
 bp_df <- msigdbr(species = "human", #selects gene sets for human genes.
                  category = "C5", #selects the Gene Ontology collection.
                  subcategory = "GO:BP") #biological processes
 
-head(bp_df)
+bp_df |>
+  select(ensembl_gene) |>
+  head()
+
 ```
 
 The `msigdbr` package was used to retrieve gene sets from C5 which contains gene sets from the Gene Ontology. In particular I selected the biological process subcollection, so the dataset `GO_df` contains information about the biological processes associated with each gene.
 
-```{r}
-bp_df |>
-  summarise(
-    n_gene_sets = length(unique(gs_name)),
-    n_genes = length(unique(ensembl_gene))
-  )
-
-go_sets |>
-  count(gs_name, gs_description) |>
-  arrange(desc(n))
-```
-
-The dataset contains 7658 gene sets (biological processes) and 20541 genes.
+The genes in bp_df are without point so i need to change the enseble in the lm_results
