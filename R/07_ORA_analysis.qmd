@@ -265,7 +265,7 @@ To further investigate the genes contributing to the enriched processes, I annot
 
 ```{r}
 
-gene_annotation <- read_tsv("../data/raw/gencode_v36_gene_probemap.tsv")
+gene_annotation <- read_tsv("../data/_raw/gencode_v36_gene_probemap.tsv")
 
 genes_w_chr <- enriched_genes_annotated |>
   select(ensembl_gene, symbol, estimate) |>
@@ -315,6 +315,9 @@ ORA_plot2
   
 ggsave(filename = "../results/07_ORA_plot2.png",
        plot = ORA_plot2)
+
+write_tsv(significant_pathways, "../data/07_dat_ora_pathways.tsv")
+write_tsv(genes_w_chr, "../data/07_dat_ora_genes.tsv")
 ```
 
 All four DEGs contributing to the significantly enriched processes are located on the sex chromosomes. KDM5C and KDM6A are located on the X chromosome, whereas KDM5D and UTY are located on the Y chromosome.\

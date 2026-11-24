@@ -1,0 +1,412 @@
+---
+editor: visual
+title: "Gene Expression Patterns in Acute Myeloid Leukemia"
+subtitle: "Group 26"
+author: "G. Biasiolo, M. Gherardi, A. Papachristakis, P. Rastgoo, S. Sironi"
+format:
+  revealjs:
+    theme: moon
+    transition: slide
+    background-transition: fade
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| include: false
+library("tidyverse")
+library("patchwork")
+library("ggrepel")
+
+col_male   <- "#4F9FC4"
+col_female <- "#E0787F"
+col_before <- "#E0787F"
+col_after  <- "#4F9FC4"
+bg         <- "#002b36"
+
+theme_moon <- function(base_size = 14) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      plot.background    = element_rect(fill = bg, color = NA),
+      panel.background   = element_rect(fill = bg, color = NA),
+      panel.grid.major.y = element_line(color = "#0f4552", linewidth = 0.4),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor   = element_blank(),
+      text       = element_text(color = "#93a1a1"),
+      axis.text  = element_text(color = "#93a1a1"),
+      axis.title = element_text(color = "#93a1a1"),
+      plot.title = element_text(color = "#eee8d5", face = "bold",
+                                size = base_size + 2),
+      plot.title.position = "plot",
+      legend.position = "none"
+    )
+}
+```
+
+## Background {.center style="text-align: center;"}
+
+**Acute Myeloid Leukemia (AML)** is a cancer of the myeloid cells that causes an overproduction of abnormal blast cells that crowd bone marrow and prevent it from making normal blood cells
+
+### Research question
+
+Which genes show differences in expression between male and female AML patients?
+
+------------------------------------------------------------------------
+
+## Dataset and Data Wrangling {.center style="text-align: center;"}
+
+::::: columns
+::: {.column width="40%"}
+TCGA-LAML gene expression data and clinical metadata
+
+60660 gene identifiers
+
+151 samples (84 males, 67 females)
+:::
+
+::: {.column width="60%"}
+```{r}
+#| fig-width: 6
+#| fig-height: 5
+#| fig-align: center
+raw_metadata <- read_rds("../data/_raw/laml_metadata.rds")
+
+processed_metadata <- read_tsv("../data/02_dat_clean_meta.tsv.gz")
+
+# Summary table with metadata record counts
+sample_summary <- tibble(
+  stage = c("Before matching", "After matching"),
+  records = c(nrow(raw_metadata),
+              nrow(processed_metadata))
+) |>
+  mutate(stage = fct_inorder(stage))
+
+# Metadata records before and after matching
+ggplot(sample_summary,
+       aes(x = stage, y = records, fill = stage)) +
+  geom_col(width = 0.5) +
+  geom_text(aes(label = records),
+            vjust = -0.6, size = 5, fontface = "bold", color = "#eee8d5") +
+  scale_fill_manual(values = c("Before matching" = col_before,
+                               "After matching" = col_after)) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(title = "Metadata records before and after matching",
+       x = NULL,
+       y = "Number of metadata records") +
+  theme_moon()
+```
+:::
+:::::
+
+------------------------------------------------------------------------
+
+## Patient Characteristics {.center style="text-align: center;"}
+
+```{r}
+#| fig-width: 12
+#| fig-height: 5
+#| fig-align: center
+p1 <- ggplot(processed_metadata,
+             aes(x = gender.demographic, fill = gender.demographic)) +
+  geom_bar(width = 0.5) +
+  geom_text(stat = "count", aes(label = after_stat(count)),
+            vjust = -0.6, size = 5, fontface = "bold", color = "#eee8d5") +
+  scale_fill_manual(values = c("male" = col_male, "female" = col_female)) +
+  scale_x_discrete(limits = c("male", "female"), labels = c("Male", "Female")) +
+  scale_y_continuous(breaks = seq(0, 100, 20),
+                     expand = expansion(mult = c(0, 0.15))) +
+  labs(title = "Gender distribution", x = NULL, y = "Number of patients") +
+  theme_moon()
+
+p2 <- ggplot(processed_metadata,
+             aes(x = gender.demographic, y = age_at_index.demographic,
+                 fill = gender.demographic, color = gender.demographic)) +
+  geom_boxplot(width = 0.5, alpha = 0.25, linewidth = 0.9,
+               outlier.shape = NA) +
+  geom_jitter(width = 0.15, alpha = 0.7, size = 2) +
+  scale_fill_manual(values = c("male" = col_male, "female" = col_female)) +
+  scale_color_manual(values = c("male" = col_male, "female" = col_female)) +
+  scale_x_discrete(limits = c("male", "female"), labels = c("Male", "Female")) +
+  scale_y_continuous(breaks = seq(20, 90, 10),
+                     expand = expansion(mult = c(0.02, 0.08))) +
+  labs(title = "Age by gender", x = NULL, y = "Age (years)") +
+  theme_moon()
+
+p1 + p2 &
+  theme(plot.background = element_rect(fill = bg, color = NA))
+```
+
+------------------------------------------------------------------------
+
+## Gene Expression Distribution {.center style="text-align: center;"}
+
+::::: columns
+::: {.column width="60%"}
+```{r}
+#| fig-width: 6.5
+#| fig-height: 4.8
+#| out-width: "100%"
+processed_expression <- read_tsv("../data/02_dat_clean_expr.tsv.gz")
+
+sample_expression <- processed_expression |>
+  filter(!is.na(gender.demographic)) |>
+  group_by(sample, gender.demographic) |>
+  summarise(median_expression = median(expression, na.rm = TRUE),
+            .groups = "drop")
+
+ggplot(sample_expression,
+       aes(x = median_expression,
+           fill = gender.demographic,
+           color = gender.demographic)) +
+  geom_density(alpha = 0.25, linewidth = 0.9) +
+  scale_fill_manual(values = c("male" = col_male, "female" = col_female),
+                    breaks = c("male", "female"),
+                    labels = c("Male", "Female")) +
+  scale_color_manual(values = c("male" = col_male, "female" = col_female),
+                     breaks = c("male", "female"),
+                     labels = c("Male", "Female")) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.08))) +
+  labs(title = "Distribution of median gene expression",
+       subtitle = "Sample-level median across all genes by gender",
+       x = "Median expression (log2 CPM)",
+       y = "Density",
+       fill = "Gender",
+       color = "Gender") +
+  theme_moon(base_size = 12) +
+  theme(legend.position = "top")
+```
+:::
+
+::: {.column width="40%" style="text-align: left; font-size: 0.6em; line-height: 1.35;"}
+**Global baseline:** sample medians overlap closely between genders
+
+**Shape:** both groups are bimodal
+
+**Limit:** similar medians do not rule out single-gene differences
+:::
+:::::
+
+------------------------------------------------------------------------
+
+## Highly Variable Genes {.center style="text-align: center;"}
+
+```{r}
+#| fig-width: 12
+#| fig-height: 3.3
+#| out-width: "100%"
+top_50_genes <- processed_expression |>
+  group_by(Ensembl_ID) |>
+  summarise(variance = var(expression, na.rm = TRUE), .groups = "drop") |>
+  arrange(desc(variance)) |>
+  slice_head(n = 50)
+
+top_50_clean <- sub("\\..*$", "", top_50_genes$Ensembl_ID)
+
+gender_heatmap_horiz <- processed_expression |>
+  filter(Ensembl_ID %in% top_50_genes$Ensembl_ID,
+         !is.na(gender.demographic)) |>
+  group_by(Ensembl_ID) |>
+  mutate(expression_scaled = (expression - mean(expression, na.rm = TRUE)) /
+           sd(expression, na.rm = TRUE)) |>
+  group_by(Ensembl_ID, gender.demographic) |>
+  summarise(mean_scaled_expression = mean(expression_scaled, na.rm = TRUE),
+            .groups = "drop") |>
+  mutate(gene_label = sub("\\..*$", "", as.character(Ensembl_ID)),
+         gene_label = factor(gene_label, levels = top_50_clean))
+
+ggplot(gender_heatmap_horiz,
+       aes(x = gene_label,
+           y = gender.demographic,
+           fill = mean_scaled_expression)) +
+  geom_tile(color = bg, linewidth = 0.4) +
+  scale_fill_gradient2(low = "#4F9FC4",
+                       mid = "#073642",
+                       high = "#E0787F",
+                       midpoint = 0,
+                       name = "Mean scaled\nexpression") +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_discrete(limits = c("female", "male"),
+                   labels = c("Female", "Male"),
+                   expand = c(0, 0)) +
+  labs(title = "Highly variable gene expression in TCGA-LAML",
+       subtitle = "Top 50 most variable genes (ordered left to right by variance): mean z-score by gender",
+       x = NULL,
+       y = NULL) +
+  theme_moon(base_size = 12) +
+  theme(panel.grid.major.y = element_blank(),
+        axis.text.x = element_text(size = 7.5, family = "mono", angle = 90,
+                                   vjust = 0.5, hjust = 1),
+        axis.text.y = element_text(size = 11, face = "bold",
+                                   color = "#eee8d5"),
+        legend.position = "top",
+        plot.margin = margin(5, 10, 5, 10)) +
+  guides(fill = guide_colorbar(barwidth = 12, barheight = 0.6))
+```
+
+**Color scale:** Mean gene-wise z-score (blue = lower, coral = higher).
+
+**Main pattern:** Top variable genes show group contrasts (e.g., sex-linked transcripts).
+
+**Exploratory limit:** Ranked by total variance, not formal differential expression tests.
+
+------------------------------------------------------------------------
+
+## Linear Models Approach {.center style="text-align: center;"}
+
+-   One model per gene: **expression \~ gender + age**
+-   Gender coefficient = **log2FC** male vs female
+-   FDR correction
+-   Significant: **q \< 0.05** and **\|log2FC\| \> 1**
+
+------------------------------------------------------------------------
+
+## Linear Models Result {.center style="text-align: center;"}
+
+```{r}
+#| include: false
+lm_results <- read_tsv("../data/05_dat_lm_results.tsv.gz")
+
+n_changed <- lm_results |>
+  filter(direction != "NS") |>
+  nrow()
+n_changed_sex <- lm_results |>
+  filter(direction != "NS", sex_chrom) |>
+  nrow()
+```
+
+::::: columns
+::: {.column width="65%"}
+```{r}
+#| fig-width: 7
+#| fig-height: 5.5
+#| out-width: "100%"
+volcano_dat <- lm_results |>
+  mutate(gene_group = case_when(direction == "NS" ~ "Not significant",
+                                sex_chrom ~ "X/Y",
+                                TRUE ~ "Autosomal"),
+         label = if_else(direction != "NS",
+                         coalesce(symbol, gene),
+                         ""))
+
+volcano_dat |>
+  ggplot(aes(x = estimate,
+             y = -log10(pmax(q_value, 1e-300)),
+             colour = gene_group,
+             label = label)) +
+  geom_point(alpha = 0.6, size = 1.2) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed",
+             colour = "#586e75") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed",
+             colour = "#586e75") +
+  geom_text_repel(data = volcano_dat |>
+                    filter(label != ""),
+                  size = 3, colour = "#eee8d5",
+                  max.overlaps = Inf, show.legend = FALSE) +
+  scale_colour_manual(values = c("Not significant" = "#586e75",
+                                 "X/Y" = "#E0787F",
+                                 "Autosomal" = "#4F9FC4")) +
+  labs(x = "log2 fold change (male vs female)",
+       y = "-log10(q value)",
+       colour = NULL,
+       title = "Male vs female, 151 AML patients") +
+  theme_moon() +
+  theme(legend.position = "top")
+```
+:::
+
+::: {.column width="35%" style="text-align: left; font-size: 0.6em; line-height: 1.35;"}
+**`r n_changed` genes** significant, **`r n_changed_sex`** on X/Y
+
+XIST ↑ in females, Y genes ↑ in males → **sanity check**
+
+Autosomal hits: mostly pseudogenes (**mapping artefact**)
+:::
+:::::
+
+------------------------------------------------------------------------
+
+## Over Representation Analysis {.center style="text-align: center;"}
+
+```{r}
+#| include: false
+ora_pathways <- read_tsv("../data/07_dat_ora_pathways.tsv")
+ora_genes <- read_tsv("../data/07_dat_ora_genes.tsv")
+```
+
+::::: columns
+::: {.column width="50%"}
+```{r}
+#| fig-width: 6
+#| fig-height: 4.5
+#| out-width: "100%"
+ora_pathways |>
+  mutate(pathway = str_remove(gs_name, "^GOBP_"),
+         pathway = str_replace_all(pathway, "_", " "),
+         pathway = str_wrap(str_to_sentence(pathway), 20),
+         pathway = fct_reorder(pathway, -log10(q_value))) |>
+  ggplot(aes(x = -log10(q_value), y = pathway)) +
+  geom_col(fill = col_after, width = 0.6) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.1))) +
+  labs(title = "Enriched GO Biological Processes",
+       x = "-log10(q value)",
+       y = NULL) +
+  theme_moon() +
+  theme(panel.grid.major.x = element_line(color = "#0f4552",
+                                          linewidth = 0.4),
+        panel.grid.major.y = element_blank())
+```
+:::
+
+::: {.column width="50%"}
+```{r}
+#| fig-width: 6
+#| fig-height: 4.5
+#| out-width: "100%"
+ora_genes |>
+  mutate(symbol = fct_reorder(symbol, estimate),
+         chrom = str_remove(chrom, "chr")) |>
+  ggplot(aes(x = estimate, y = symbol, fill = chrom)) +
+  geom_col(width = 0.6) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "#586e75") +
+  scale_fill_manual(values = c("X" = col_female, "Y" = col_male)) +
+  labs(title = "Genes driving the enrichment",
+       x = "log2 fold change (male vs female)",
+       y = NULL,
+       fill = "Chromosome") +
+  theme_moon() +
+  theme(legend.position = "top",
+        panel.grid.major.x = element_line(color = "#0f4552",
+                                          linewidth = 0.4),
+        panel.grid.major.y = element_blank())
+```
+:::
+:::::
+
+::: {style="font-size: 0.6em;"}
+3 enriched processes, all **demethylation**, driven by 4 genes that form **X–Y pairs** (KDM5C/KDM5D, KDM6A/UTY)
+:::
+
+------------------------------------------------------------------------
+
+## Conclusions and Limitations {.center style="text-align: center;"}
+
+::::: columns
+::: {.column width="50%" style="text-align: left; font-size: 0.7em;"}
+**Conclusions**
+
+-   Sex differences almost **only on X and Y**
+-   PCA: sex and age are not the main variation
+-   ORA: enrichment driven by **X–Y gene pairs**
+:::
+
+::: {.column width="50%" style="text-align: left; font-size: 0.7em;"}
+**Limitations**
+
+-   No mutation data → no subgroup analysis
+-   Linear models, not count-based (DESeq2)
+-   ORA gives no direction of change
+:::
+:::::

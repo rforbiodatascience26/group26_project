@@ -31,7 +31,7 @@ Sys.setenv("VROOM_CONNECTION_SIZE" = "5000000")
 dat <- read_tsv("../data/03_dat_aug.tsv.gz")
 
 probemap <- read_tsv(
-  "../data/_raw/gencode.v36.annotation.gtf.gene.probemap"
+  "../data/_raw/gencode_v36_gene_probemap.tsv"
 ) |>
   select(gene = id,
          symbol = gene,
