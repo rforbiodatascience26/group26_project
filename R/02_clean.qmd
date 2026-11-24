@@ -1,9 +1,7 @@
 ---
-title: "data_wrangling"
+title: "02_clean"
 format: html
 ---
-
-# **Exploring gene expression patterns in male and female patients with acute myeloid leukemia using TCGA data**
 
 ## Loading libraries
 
@@ -16,51 +14,18 @@ library("tidyverse")
 ## Loading the data
 
 ```{r}
-laml_metadata <- readRDS(
-  file = "data/raw/laml_metadata.rds")
+laml_metadata <- read_tsv(
+  file = "../data/01_dat_load_meta.tsv.gz"
+)
 
-laml_expression <- readRDS(
-  file = "data/raw/laml_counts.rds")
+laml_expression <- read_tsv(
+  file = "../data/01_dat_load_expr.tsv.gz"
+)
 ```
 
-## Data description
+## Data wrangling
 
-### Metadata
-
-```{r}
-# Inspect the metadata
-glimpse(laml_metadata)
-
-# Number of rows and columns
-dim(laml_metadata)
-
-# Variable names
-names(laml_metadata)
-```
-
-### Gene expression data
-
-```{r}
-# Inspect the expression data
-glimpse(laml_expression)
-
-# Number of rows and columns
-dim(laml_expression)
-
-# Variable names
-names(laml_expression)
-```
-
-The expression dataset contains gene identifiers and expression measurements for individual samples. Before reshaping the data, I inspect the distribution of expression values to get an overview of their scale.
-
-```{r}
-# Inspect the distribution of expression values for the first sample
-summary(laml_expression[[2]])
-```
-
-The expression values in the first sample range from 0 to 19.323. The median is 1.585, while the mean is 3.310, suggesting a right-skewed distribution. The first quartile is zero, indicating that at least 25% of the expression values are zero. The decimal values suggest that the data are not untransformed integer counts. However, the exact transformation or normalisation cannot be established from this inspection alone.
-
-#### Checking gene identifiers
+### Checking gene identifiers
 
 Before reshaping the expression dataset, I check whether the gene identifiers are missing or duplicated. Each gene should be identifiable in the expression dataset so that the measurements can be associated with the correct gene.
 
@@ -75,8 +40,6 @@ laml_expression |>
 ```
 
 The expression dataset contains 60,660 gene identifiers, all of which are unique. No missing gene identifiers were found. Therefore, no gene identifier cleaning or removal is necessary before reshaping the dataset.
-
-## Data wrangling
 
 ### Checking and matching samples
 
@@ -287,23 +250,20 @@ laml_expression_joined |>
   count(gender.demographic, sort = TRUE)
 ```
 
-### Saving processed data
+### Saving cleaned data
 
-After reshaping the gene expression data and joining it with the matched metadata, the processed datasets are saved in the `data/processed/` folder. The original files in `data/raw/` are kept unchanged.
+After reshaping the gene expression data and joining it with the matched metadata, the cleaned datasets are saved directly in the `data/` folder as compressed tab-separated files. The original files in `data/_raw/` are kept unchanged.
 
 ```{r}
-# Create the processed data folder if it does not already exist
-dir.create("data/processed", recursive = TRUE, showWarnings = FALSE)
-
 # Save the matched metadata
-saveRDS(
+write_tsv(
   laml_metadata_matched,
-  file = "data/processed/laml_metadata_matched.rds"
+  file = "../data/02_dat_clean_meta.tsv.gz"
 )
 
 # Save the joined gene expression data
-saveRDS(
+write_tsv(
   laml_expression_joined,
-  file = "data/processed/laml_expression_joined.rds"
+  file = "../data/02_dat_clean_expr.tsv.gz"
 )
 ```
