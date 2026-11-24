@@ -17,10 +17,10 @@ library("tidyverse")
 
 ```{r}
 laml_metadata <- readRDS(
-  file = "data/raw/laml_metadata.rds")
+  file = "../data/raw/laml_metadata.rds")
 
 laml_expression <- readRDS(
-  file = "data/raw/laml_counts.rds")
+  file = "../data/raw/laml_counts.rds")
 ```
 
 ## Data description
@@ -293,17 +293,17 @@ After reshaping the gene expression data and joining it with the matched metadat
 
 ```{r}
 # Create the processed data folder if it does not already exist
-dir.create("data/processed", recursive = TRUE, showWarnings = FALSE)
+dir.create("../data/processed", recursive = TRUE, showWarnings = FALSE)
 
 # Save the matched metadata
 saveRDS(
   laml_metadata_matched,
-  file = "data/processed/laml_metadata_matched.rds"
+  file = "../data/processed/laml_metadata_matched.rds"
 )
 
 # Save the joined gene expression data
 saveRDS(
   laml_expression_joined,
-  file = "data/processed/laml_expression_joined.rds"
+  file = "../data/processed/laml_expression_joined.rds"
 )
 ```
