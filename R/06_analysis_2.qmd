@@ -15,14 +15,13 @@ library("broom")
 
 ## Load data
 
-The wide file has about 20,000 gene columns, so each line is longer than
-the default read buffer. The buffer is increased before reading.
+The wide file has about 20,000 gene columns, so each line is longer than the default read buffer. The buffer is increased before reading.
 
 ```{r}
 #| message: false
 Sys.setenv("VROOM_CONNECTION_SIZE" = "5000000")
 
-dat <- read_tsv("../data/03_dat_aug.tsv.gz")
+dat <- read_tsv("../data/processed/03_dat_aug.tsv.gz")
 ```
 
 ## PCA
@@ -55,10 +54,7 @@ ggsave("../results/06_pca_gender.png", pca_gender,
        width = 6, height = 5)
 ```
 
-Male and female samples are mixed together along PC1 and PC2, so sex is
-not a main source of variation in the AML transcriptome. This fits with
-the results of 05_analysis_1, where the differences between males and
-females were found almost only in a small number of sex chromosome genes.
+Male and female samples are mixed together along PC1 and PC2, so sex is not a main source of variation in the AML transcriptome. This fits with the results of 05_analysis_1, where the differences between males and females were found almost only in a small number of sex chromosome genes.
 
 ## PC1 vs PC2 by age
 
@@ -77,11 +73,7 @@ ggsave("../results/06_pca_age.png", pca_age,
        width = 6, height = 5)
 ```
 
-There is no clear pattern with age along PC1 or PC2, so age is not a main
-source of variation either. The variation in the data is therefore driven
-by other factors, most likely differences between the leukaemias
-themselves (for example genetic subtypes), which are not available in our
-metadata.
+There is no clear pattern with age along PC1 or PC2, so age is not a main source of variation either. The variation in the data is therefore driven by other factors, most likely differences between the leukaemias themselves (for example genetic subtypes), which are not available in our metadata.
 
 ## Variance explained
 
@@ -113,6 +105,4 @@ ggsave("../results/06_pca_variance.png", pca_variance,
        width = 6, height = 4)
 ```
 
-PC1 explains around `r round(100 * pct_pc1)`% of the variance and PC2
-around `r round(100 * pct_pc2)`%. The rest is spread over many components,
-which is normal for gene expression data.
+PC1 explains around `r round(100 * pct_pc1)`% of the variance and PC2 around `r round(100 * pct_pc2)`%. The rest is spread over many components, which is normal for gene expression data.
