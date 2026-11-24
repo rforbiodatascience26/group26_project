@@ -21,7 +21,7 @@ The wide file has about 20,000 gene columns, so each line is longer than the def
 #| message: false
 Sys.setenv("VROOM_CONNECTION_SIZE" = "5000000")
 
-dat <- read_tsv("../data/processed/03_dat_aug.tsv.gz")
+dat <- read_tsv("../data/03_dat_aug.tsv.gz")
 ```
 
 ## PCA
