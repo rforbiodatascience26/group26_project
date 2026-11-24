@@ -14,29 +14,25 @@ library("tidyverse")
 
 ## Load data
 
-We start from the wrangled files in `data/processed/`:
+We start from the wrangled files in `data`:
 
-- `laml_expression_joined.rds`: one row per gene per sample, with the
-  expression on the log2(count + 1) scale (60,660 genes, 151 samples)
-- `laml_metadata_matched.rds`: one row per sample, for the same 151
-  samples
+-   `02_dat_clean_expr.tsv.gz`: one row per gene per sample, with the expression on the log2(count + 1) scale (60,660 genes, 151 samples)
+-   `02_dat_clean_meta.tsv.gz`: one row per sample, for the same 151 samples
 
 ```{r}
-expr_long <- read_rds("../data/processed/laml_expression_joined.rds") |>
+expr_long <- read_tsv("../data/02_dat_clean_expr.tsv.gz") |>
   select(Ensembl_ID,
          sample,
          log2_count = expression)
 
-samples <- read_rds("../data/processed/laml_metadata_matched.rds") |>
+samples <- read_tsv("../data/02_dat_clean_meta.tsv.gz") |>
   select(sample,
          patient = submitter_id,
          gender = gender.demographic,
          age = age_at_index.demographic)
 ```
 
-All 151 samples are peripheral blood from the same tissue source site
-(Washington University), so specimen type and site are not kept as
-variables.
+All 151 samples are peripheral blood from the same tissue source site (Washington University), so specimen type and site are not kept as variables.
 
 ```{r}
 samples |>
@@ -45,7 +41,7 @@ samples |>
 
 ## Check the scale of the values
 
-If the values are log2(count + 1), then 2^x - 1 should give whole numbers.
+If the values are log2(count + 1), then 2\^x - 1 should give whole numbers.
 
 ```{r}
 set.seed(42)
@@ -58,11 +54,7 @@ expr_long |>
 
 ## Normalise for library size
 
-Samples are sequenced to different depths, so the raw counts are not
-comparable between samples. We go back to raw counts, divide by the total
-number of counts in each sample (counts per million, CPM) and take
-log2(CPM + 1). The library size is computed on all genes, before the
-low expression filter.
+Samples are sequenced to different depths, so the raw counts are not comparable between samples. We go back to raw counts, divide by the total number of counts in each sample (counts per million, CPM) and take log2(CPM + 1). The library size is computed on all genes, before the low expression filter.
 
 ```{r}
 expr_long <- expr_long |>
@@ -76,9 +68,7 @@ expr_long <- expr_long |>
 
 ## Remove genes with low expression
 
-Genes that are hardly expressed only add noise and make the per-gene models
-slower. We keep genes with log2(CPM + 1) > 1 in at least 20% of the
-samples.
+Genes that are hardly expressed only add noise and make the per-gene models slower. We keep genes with log2(CPM + 1) \> 1 in at least 20% of the samples.
 
 ```{r}
 genes_to_keep <- expr_long |>
@@ -92,13 +82,11 @@ n_genes_before <- expr_long |>
 n_genes_after <- nrow(genes_to_keep)
 ```
 
-`r format(n_genes_after, big.mark = ",")` of
-`r format(n_genes_before, big.mark = ",")` genes are kept.
+`r format(n_genes_after, big.mark = ",")` of `r format(n_genes_before, big.mark = ",")` genes are kept.
 
 ## One row per sample
 
-The analyses need one row per sample and one column per gene, joined with
-the sample information.
+The analyses need one row per sample and one column per gene, joined with the sample information.
 
 ```{r}
 dat_aug <- expr_long |>
@@ -110,8 +98,7 @@ dat_aug <- samples |>
   inner_join(dat_aug, by = "sample")
 ```
 
-Check that no samples were lost in the join (we expect 151 samples, 67
-female and 84 male).
+Check that no samples were lost in the join (we expect 151 samples, 67 female and 84 male).
 
 ```{r}
 samples |>

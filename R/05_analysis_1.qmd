@@ -16,17 +16,13 @@ library("ggrepel")
 
 ## Data
 
-We use the TCGA acute myeloid leukemia cohort (TCGA-LAML; Cancer Genome
-Atlas Research Network 2013). The files were downloaded from the GDC hub on
-UCSC Xena (Goldman et al. 2020).
+We use the TCGA acute myeloid leukemia cohort (TCGA-LAML; Cancer Genome Atlas Research Network 2013). The files were downloaded from the GDC hub on UCSC Xena (Goldman et al. 2020).
 
 ## Load data
 
-The wide file has around 20,000 gene columns, so one line does not fit in
-the default read buffer. We make the buffer bigger before reading.
+The wide file has around 20,000 gene columns, so one line does not fit in the default read buffer. We make the buffer bigger before reading.
 
-From the probemap we take the gene symbol and the chromosome. We need the
-chromosome later to split the genes on X and Y from the autosomal ones.
+From the probemap we take the gene symbol and the chromosome. We need the chromosome later to split the genes on X and Y from the autosomal ones.
 
 ```{r}
 #| message: false
@@ -44,13 +40,9 @@ probemap <- read_tsv(
 
 ## Model
 
-Every patient has only one sample, so the design is not paired. For each
-gene we fit `log2_expr ~ gender + age`. We add age as a covariate, so that
-an age difference between the two groups does not show up as a gender
-effect.
+Every patient has only one sample, so the design is not paired. For each gene we fit `log2_expr ~ gender + age`. We add age as a covariate, so that an age difference between the two groups does not show up as a gender effect.
 
-female is the reference level, which means the gender coefficient is male
-minus female.
+female is the reference level, which means the gender coefficient is male minus female.
 
 ```{r}
 dat <- dat |>
@@ -69,8 +61,7 @@ dat_long <- dat |>
                values_to = "log2_expr")
 ```
 
-For testing we can run on 100 random genes only. With `test_run` set to
-FALSE all genes are used (this has to be FALSE in the final render).
+For testing we can run on 100 random genes only. With `test_run` set to FALSE all genes are used (this has to be FALSE in the final render).
 
 ```{r}
 test_run <- FALSE
@@ -147,14 +138,11 @@ lm_results <- lm_results |>
                                     TRUE ~ "no"))
 ```
 
-The values are log2(CPM+1), so they are already normalised for library
-size. This means the estimate is the log2 fold change of male vs female,
-e.g. an estimate of 2 is roughly 4 times higher expression in males.
+The values are log2(CPM+1), so they are already normalised for library size. This means the estimate is the log2 fold change of male vs female, e.g. an estimate of 2 is roughly 4 times higher expression in males.
 
 ## Direction of change
 
-A gene is Up or Down if q < 0.05 and |log2FC| > 1, otherwise it is NS.
-Up is higher in males and Down is higher in females.
+A gene is Up or Down if q \< 0.05 and \|log2FC\| \> 1, otherwise it is NS. Up is higher in males and Down is higher in females.
 
 ```{r}
 lm_results <- lm_results |>
@@ -165,8 +153,7 @@ lm_results <- lm_results |>
 lm_results
 ```
 
-Here we check if any q values are rounded to 0, since -log10(0) is Inf
-and those points would be lost in the volcano plot.
+Here we check if any q values are rounded to 0, since -log10(0) is Inf and those points would be lost in the volcano plot.
 
 ```{r}
 lm_results |>
@@ -184,7 +171,7 @@ lm_summary <- lm_results |>
 
 lm_summary
 
-write_tsv(lm_summary, "../results/05_n_up_down.tsv")
+write_tsv(lm_summary, "../data/05_n_up_down.tsv")
 
 n_tested <- nrow(lm_results)
 n_changed <- lm_results |>
@@ -209,15 +196,11 @@ n_rps4x_pseudo <- lm_results |>
   nrow()
 ```
 
-We tested `r format(n_tested, big.mark = ",")` genes in total. Using
-q < 0.05 and |log2FC| > 1, `r n_changed` genes are different between males
-and females, and `r n_changed_sex` of these are on X or Y. If we drop the
-fold change cut-off, `r n_signif_auto` autosomal genes have q < 0.05.
+We tested `r format(n_tested, big.mark = ",")` genes in total. Using q \< 0.05 and \|log2FC\| \> 1, `r n_changed` genes are different between males and females, and `r n_changed_sex` of these are on X or Y. If we drop the fold change cut-off, `r n_signif_auto` autosomal genes have q \< 0.05.
 
 ## Volcano plot
 
-We label the 10 significant genes with the lowest q value and also the
-significant autosomal genes. Genes without a symbol get their Ensembl ID.
+We label the 10 significant genes with the lowest q value and also the significant autosomal genes. Genes without a symbol get their Ensembl ID.
 
 ```{r}
 top_genes <- lm_results |>
@@ -264,26 +247,13 @@ volcano_plot
 ggsave("../results/05_volcano.png", volcano_plot, width = 7, height = 5)
 ```
 
-One point is one gene. On the x axis is the log2 fold change (male vs
-female), on the y axis -log10 of the q value, so higher up means more
-significant. The dashed lines are the cut-offs we used (q < 0.05 and
-|log2FC| > 1). The grey points do not pass both cut-offs. Some of them do
-have q < 0.05, but their fold change is smaller than 2.
+One point is one gene. On the x axis is the log2 fold change (male vs female), on the y axis -log10 of the q value, so higher up means more significant. The dashed lines are the cut-offs we used (q \< 0.05 and \|log2FC\| \> 1). The grey points do not pass both cut-offs. Some of them do have q \< 0.05, but their fold change is smaller than 2.
 
-Nearly all the genes with a big difference are on the sex chromosomes.
-XIST, which comes from the inactive X, is much higher in females. Y genes
-like DDX3Y, KDM5D, UTY and RPS4Y1 are higher in males. We expected this,
-because XIST and Y genes like RPS4Y1 are used as sex markers in RNA data
-(van den Berge and Sijen 2017). So it is also a good check that the
-analysis and the sex labels of the samples are right. Only one autosomal
-gene passes both cut-offs (`r auto_changed`), and it is labelled in the
-plot.
+Nearly all the genes with a big difference are on the sex chromosomes. XIST, which comes from the inactive X, is much higher in females. Y genes like DDX3Y, KDM5D, UTY and RPS4Y1 are higher in males. We expected this, because XIST and Y genes like RPS4Y1 are used as sex markers in RNA data (van den Berge and Sijen 2017). So it is also a good check that the analysis and the sex labels of the samples are right. Only one autosomal gene passes both cut-offs (`r auto_changed`), and it is labelled in the plot.
 
 ## Forest plot of top autosomal genes
 
-We expect the biggest differences to be on X and Y. To see
-if anything happens in the rest of the genome, we plot the 10 autosomal
-genes with the lowest q value.
+We expect the biggest differences to be on X and Y. To see if anything happens in the rest of the genome, we plot the 10 autosomal genes with the lowest q value.
 
 ```{r}
 top_auto <- lm_results |>
@@ -313,57 +283,28 @@ forest_plot
 ggsave("../results/05_forest.png", forest_plot, width = 6, height = 4)
 ```
 
-`r n_signif_auto` autosomal genes have q < 0.05, but for most of them the
-fold change is small. `r n_rps4x_pseudo` of these are RPS4X pseudogenes.
-Their sequence is very close to RPS4X on X and RPS4Y1 on Y, so we think the
-signal most likely comes from reads of the sex chromosome genes that map to
-the pseudogenes, and not from a real difference on the autosomes. Reads
-that map to more than one place, for example to a gene and its processed
-pseudogene, are known to make genes look expressed when they are not
-(Zhang et al. 2013).
+`r n_signif_auto` autosomal genes have q \< 0.05, but for most of them the fold change is small. `r n_rps4x_pseudo` of these are RPS4X pseudogenes. Their sequence is very close to RPS4X on X and RPS4Y1 on Y, so we think the signal most likely comes from reads of the sex chromosome genes that map to the pseudogenes, and not from a real difference on the autosomes. Reads that map to more than one place, for example to a gene and its processed pseudogene, are known to make genes look expressed when they are not (Zhang et al. 2013).
 
-So in our cohort the expression differences between males and females are found
-almost only on the sex chromosomes.
+So in our cohort the expression differences between males and females are found almost only on the sex chromosomes.
 
 ## Limitations
 
-Other studies did find sex differences in AML, for example in which
-mutations occur together and in gene expression inside mutation groups
-(Hellesøy et al. 2021; Ozga et al. 2024). They had bigger cohorts and
-looked within genetic subgroups, like patients with FLT3-ITD. We compare
-all 151 patients in one model and we have no mutation data, so if a
-difference only exists inside a subgroup we would not see it.
+Other studies did find sex differences in AML, for example in which mutations occur together and in gene expression inside mutation groups (Hellesøy et al. 2021; Ozga et al. 2024). They had bigger cohorts and looked within genetic subgroups, like patients with FLT3-ITD. We compare all 151 patients in one model and we have no mutation data, so if a difference only exists inside a subgroup we would not see it.
 
 ## References
 
-Cancer Genome Atlas Research Network (2013). Genomic and epigenomic
-landscapes of adult de novo acute myeloid leukemia. N Engl J Med
-368(22):2059-2074. doi:10.1056/NEJMoa1301689
+Cancer Genome Atlas Research Network (2013). Genomic and epigenomic landscapes of adult de novo acute myeloid leukemia. N Engl J Med 368(22):2059-2074. doi:10.1056/NEJMoa1301689
 
-Benjamini Y, Hochberg Y (1995). Controlling the false discovery rate: a
-practical and powerful approach to multiple testing. J R Stat Soc B
-57(1):289-300. doi:10.1111/j.2517-6161.1995.tb02031.x
+Benjamini Y, Hochberg Y (1995). Controlling the false discovery rate: a practical and powerful approach to multiple testing. J R Stat Soc B 57(1):289-300. doi:10.1111/j.2517-6161.1995.tb02031.x
 
-Goldman MJ et al. (2020). Visualizing and interpreting cancer genomics
-data via the Xena platform. Nat Biotechnol 38:675-678.
-doi:10.1038/s41587-020-0546-8
+Goldman MJ et al. (2020). Visualizing and interpreting cancer genomics data via the Xena platform. Nat Biotechnol 38:675-678. doi:10.1038/s41587-020-0546-8
 
-Hellesøy M et al. (2021). Sex disparity in acute myeloid leukaemia with
-FLT3 internal tandem duplication mutations: implications for prognosis.
-Mol Oncol 15(9):2285-2299. doi:10.1002/1878-0261.13035
+Hellesøy M et al. (2021). Sex disparity in acute myeloid leukaemia with FLT3 internal tandem duplication mutations: implications for prognosis. Mol Oncol 15(9):2285-2299. doi:10.1002/1878-0261.13035
 
-Ozga M et al. (2024). Sex-associated differences in frequencies and
-prognostic impact of recurrent genetic alterations in adult acute myeloid
-leukemia (Alliance, AMLCG). Leukemia 38:45-57.
-doi:10.1038/s41375-023-02068-8
+Ozga M et al. (2024). Sex-associated differences in frequencies and prognostic impact of recurrent genetic alterations in adult acute myeloid leukemia (Alliance, AMLCG). Leukemia 38:45-57. doi:10.1038/s41375-023-02068-8
 
-van den Berge M, Sijen T (2017). A male and female RNA marker to infer sex
-in forensic analysis. Forensic Sci Int Genet 26:70-76.
+van den Berge M, Sijen T (2017). A male and female RNA marker to infer sex in forensic analysis. Forensic Sci Int Genet 26:70-76.
 
-Zhang Z et al. (2013). GeneScissors: a comprehensive approach to detecting
-and correcting spurious transcriptome inference owing to RNA-seq reads
-misalignment. Bioinformatics 29(13):i291-i299.
-doi:10.1093/bioinformatics/btt216
+Zhang Z et al. (2013). GeneScissors: a comprehensive approach to detecting and correcting spurious transcriptome inference owing to RNA-seq reads misalignment. Bioinformatics 29(13):i291-i299. doi:10.1093/bioinformatics/btt216
 
-R packages: tidyverse, broom and ggrepel (see `citation("tidyverse")`,
-`citation("broom")` and `citation("ggrepel")`).
+R packages: tidyverse, broom and ggrepel (see `citation("tidyverse")`, `citation("broom")` and `citation("ggrepel")`).
