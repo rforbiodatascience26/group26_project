@@ -1,0 +1,81 @@
+---
+title: "01_load"
+format: html
+---
+
+# Exploring gene expression patterns in male and female patients with acute myeloid leukemia using TCGA data
+
+## Loading libraries
+
+```{r}
+#| message: false
+
+library("tidyverse")
+```
+
+## Loading the data
+
+```{r}
+laml_metadata <- read_rds(
+  file = "../data/_raw/laml_metadata.rds"
+)
+
+laml_expression <- read_rds(
+  file = "../data/_raw/laml_counts.rds"
+)
+```
+
+## Data description
+
+### Metadata
+
+```{r}
+# Inspect the metadata
+glimpse(laml_metadata)
+
+# Number of rows and columns
+dim(laml_metadata)
+
+# Variable names
+names(laml_metadata)
+```
+
+### Gene expression data
+
+```{r}
+# Inspect the expression data
+glimpse(laml_expression)
+
+# Number of rows and columns
+dim(laml_expression)
+
+# Variable names
+names(laml_expression)
+```
+
+The expression dataset contains gene identifiers and expression measurements for individual samples. Before reshaping the data, I inspect the distribution of expression values to get an overview of their scale.
+
+```{r}
+# Inspect the distribution of expression values for the first sample
+summary(laml_expression[[2]])
+```
+
+The expression values in the first sample range from 0 to 19.323. The median is 1.585, while the mean is 3.310, suggesting a right-skewed distribution. The first quartile is zero, indicating that at least 25% of the expression values are zero. The decimal values suggest that the data are not untransformed integer counts. However, we cannot establish the exact transformation or normalisation.
+
+## Saving loaded data
+
+The loaded datasets are saved in the `data/` folder as compressed tab-separated files so that the original files in `data/_raw/` remain untouched.
+
+```{r}
+# Save the loaded metadata
+write_tsv(
+  laml_metadata,
+  file = "../data/01_dat_load_meta.tsv.gz"
+)
+
+# Save the loaded gene expression data
+write_tsv(
+  laml_expression,
+  file = "../data/01_dat_load_expr.tsv.gz"
+)
+```
