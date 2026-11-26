@@ -104,7 +104,7 @@ bp_df_filtered <- bp_df |>
 
 ## Filter gene sets by size
 
-To avoid including gene sets that are too small or too large, I restrict the analysis to gene sets containing between 10 and 500 genes from the background (put the reference).
+To avoid including gene sets that are too small or too large, I restrict the analysis to gene sets containing between 10 and 500 genes from the background, following the approach presented in the course 22150 Introduction to Systems Biology (Vitting-Seerup, 2025).
 
 -   small gene sets may produce unstable enrichment results because even a few overlapping genes can have a strong influence on the statistical test.
 
