@@ -43,7 +43,7 @@ lm_results |>
   head()
 ```
 
-Since the Ensembl gene identifiers in `lm_results` contain a version suffix, whereas those in `bp_df` do not, I create a new column called `gene_id` by removing the version suffix from each identifier. This allows the gene identifiers to be matched between the two datasets.
+Since the Ensembl gene identifiers in `lm_results` contain a version suffix and those in `bp_df` don't, I create a new column called `gene_id` by removing the version suffix from each identifier. This allows the gene identifiers to be matched between the two datasets.
 
 ```{r}
 lm_results <- lm_results |>
@@ -89,7 +89,7 @@ length(deg_go)
 length(background_go)
 ```
 
-Only 24 out of 53 DEGs and 12,289 out of 20,416 background genes are represented in the GO:BP collection. I create a table to summarize the result.
+Only 24 out of 53 DEGs and 12,289 out of 20,416 background genes are represented in the GO:BP collection.
 
 ## Filter gene sets
 
@@ -106,7 +106,7 @@ bp_df_filtered <- bp_df |>
 
 To avoid including gene sets that are too small or too large, I restrict the analysis to gene sets containing between 10 and 500 genes from the background, following the approach presented in the course 22150 Introduction to Systems Biology (Vitting-Seerup, 2025).
 
--   small gene sets may produce unstable enrichment results because even a few overlapping genes can have a strong influence on the statistical test.
+-   Small gene sets may produce unstable enrichment results because even a few overlapping genes can have a strong influence on the statistical test.
 
 -   Large gene sets may be too broad and provide less specific biological information.
 
@@ -247,15 +247,9 @@ significant_pathways |>
   )
 ```
 
-The graph shows the three significantly enriched Biological Processes identified by the ORA analysis, ranked according to their statistical significance. The three enriched processes are:
+Three enriched processes are: histone lysine demethylation, protein demethylation and demethylation (significant, but with a lower statistical significance than the other two).
 
--   Histone lysine demethylation: the most statistically significant process.
-
--   Protein demethylation: also highly significant.
-
--   Demethylation: significant, but with a lower statistical significance than the other two.
-
-Importantly, these pathways are closely related and, from `enriched_genes_annotated`, they share the same four genes: KDM5C, KDM5D, KDM6A and UTY. Therefore, they should not be interpreted as three independent biological findings but instead they collectively indicate an enrichment of demethylation-related processes, particularly histone lysine demethylation.
+These pathways are closely related and, from `enriched_genes_annotated`, they share the same four genes: KDM5C, KDM5D, KDM6A and UTY. Therefore, they should not be interpreted as three independent biological findings but instead they collectively indicate an enrichment of demethylation-related processes, particularly histone lysine demethylation.
 
 Overall, these findings suggest potential sex-related differences in epigenetic regulation. However, ORA identifies over-representation and does not provide information about whether the activity of these biological processes is increased or decreased.
 
