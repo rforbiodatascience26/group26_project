@@ -3,7 +3,7 @@ title: "01_load"
 format: html
 ---
 
-# Exploring gene expression patterns in male and female patients with acute myeloid leukemia using TCGA data
+This document loads and inspects the clinical metadata and gene expression data for acute myeloid leukemia (TCGA-LAML).
 
 ## Loading libraries
 
@@ -14,6 +14,13 @@ library("tidyverse")
 ```
 
 ## Loading the data
+
+```{r}
+### Before the code chunk, add a brief explanation of:
+# - Where you obtained the datasets.
+# - What each RDS file contains.
+# - Whether the data were previously processed.
+```
 
 ```{r}
 laml_metadata <- read_rds(
@@ -30,41 +37,39 @@ laml_expression <- read_rds(
 ### Metadata
 
 ```{r}
-# Inspect the metadata
 glimpse(laml_metadata)
 
-# Number of rows and columns
 dim(laml_metadata)
 
-# Variable names
 names(laml_metadata)
 ```
+
+The metadata dataset contains 278 rows and 72 columns, with each row representing a sample and each column containing information about the sample or its associated patient. Multiple samples can belong to the same patient, so the number of samples does not necessarily correspond to the number of unique patients.
 
 ### Gene expression data
 
 ```{r}
-# Inspect the expression data
 glimpse(laml_expression)
 
-# Number of rows and columns
 dim(laml_expression)
 
-# Variable names
 names(laml_expression)
 ```
 
-The expression dataset contains gene identifiers and expression measurements for individual samples. Before reshaping the data, I inspect the distribution of expression values to get an overview of their scale.
+The expression dataset is organised in wide format, with genes in rows and individual samples in columns. The `Ensembl_ID`column contains the gene identifiers.
 
 ```{r}
 # Inspect the distribution of expression values for the first sample
-summary(laml_expression[[2]])
+laml_expression |>
+  pull(2) |>
+  summary()
 ```
 
-The expression values in the first sample range from 0 to 19.323. The median is 1.585, while the mean is 3.310, suggesting a right-skewed distribution. The first quartile is zero, indicating that at least 25% of the expression values are zero. The decimal values suggest that the data are not untransformed integer counts. However, we cannot establish the exact transformation or normalisation.
+Expression values in the inspected sample range from 0 to 19.323. The presence of decimal values suggests that the data have been processed. The exact transformation and normalization method remain unknown.
 
 ## Saving loaded data
 
-The loaded datasets are saved in the `data/` folder as compressed tab-separated files so that the original files in `data/_raw/` remain untouched.
+Save the loaded datasets as compressed TSV files while preserving the original data in `data/_raw/`.
 
 ```{r}
 # Save the loaded metadata

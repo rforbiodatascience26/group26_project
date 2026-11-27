@@ -328,13 +328,88 @@ Autosomal hits: mostly pseudogenes (**mapping artefact**)
 
 ------------------------------------------------------------------------
 
-## Over Representation Analysis {.center style="text-align: center;"}
+
+## Over-Representation Analysis {.center style="text-align: center;"}
 
 ```{r}
 #| include: false
 ora_pathways <- read_tsv("../data/07_dat_ora_pathways.tsv")
 ora_genes <- read_tsv("../data/07_dat_ora_genes.tsv")
 ```
+
+::: {style="font-size: 0.6em; color: #93a1a1; margin-bottom: 0.4em;"}
+**Goal:** identify biological processes over-represented among differentially expressed genes
+:::
+
+:::::::: columns
+::: {.column width="33%" style="text-align: left; font-size: 0.75em;"}
+[**1. Define DEGs and background**]{style="color: #eee8d5;"}
+
+```{.r code-line-numbers="false"}
+deg_genes <- lm_results |>
+  filter(q_value < 0.05) |>
+  pull(gene_id) |>
+  unique()
+
+background_genes <- lm_results |>
+  pull(gene_id) |>
+  unique()
+```
+
+[53 DEGs out of 20,416 tested genes]{style="font-size: 0.8em;"}
+:::
+
+::: {.column width="33%" style="text-align: left; font-size: 0.75em;"}
+[**2. Retrieve GO Biological Processes**]{style="color: #eee8d5;"}
+
+```{.r code-line-numbers="false"}
+bp_df <- msigdbr(
+  species = "human",
+  category = "C5",
+  subcategory = "GO:BP"
+)
+```
+
+[Gene Ontology Biological Process gene sets]{style="font-size: 0.8em;"}
+:::
+
+::: {.column width="33%" style="text-align: left; font-size: 0.75em;"}
+[**3. Test for enrichment**]{style="color: #eee8d5;"}
+
+```{.r code-line-numbers="false"}
+fisher.test(
+  matrix(c(a, b, c, d), nrow = 2),
+  alternative = "greater"
+)
+```
+
+[Fisher's exact test + Benjamini–Hochberg correction (FDR < 0.05)]{style="font-size: 0.8em;"}
+:::
+::::::::
+
+::::: {style="display: flex; justify-content: space-around; margin-top: 0.5em;"}
+::: {style="text-align: center;"}
+[53]{style="font-size: 1.8em; font-weight: bold; color: #E0787F;"}
+
+[DEGs]{style="font-size: 0.6em;"}
+:::
+
+::: {style="text-align: center;"}
+[24]{style="font-size: 1.8em; font-weight: bold; color: #4F9FC4;"}
+
+[DEGs represented in GO:BP]{style="font-size: 0.6em;"}
+:::
+
+::: {style="text-align: center;"}
+[`r nrow(ora_pathways)`]{style="font-size: 1.8em; font-weight: bold; color: #eee8d5;"}
+
+[Significant processes]{style="font-size: 0.6em;"}
+:::
+:::::
+
+------------------------------------------------------------------------
+
+## Enriched Biological Processes {.center style="text-align: center;"}
 
 ::::: columns
 ::: {.column width="50%"}
@@ -349,12 +424,17 @@ ora_pathways |>
          pathway = fct_reorder(pathway, -log10(q_value))) |>
   ggplot(aes(x = -log10(q_value), y = pathway)) +
   geom_col(fill = col_after, width = 0.6) +
-  scale_x_continuous(expand = expansion(mult = c(0, 0.1))) +
+  geom_vline(xintercept = -log10(0.05), linetype = "dashed",
+             colour = "#586e75") +
+  geom_text(aes(label = signif(q_value, 2)),
+            hjust = -0.2, size = 4, fontface = "bold", color = "#eee8d5") +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.25))) +
   labs(title = "Enriched GO Biological Processes",
        x = "-log10(q value)",
        y = NULL) +
   theme_moon() +
-  theme(panel.grid.major.x = element_line(color = "#0f4552",
+  theme(axis.text.y = element_text(color = "#eee8d5"),
+        panel.grid.major.x = element_line(color = "#0f4552",
                                           linewidth = 0.4),
         panel.grid.major.y = element_blank())
 ```
@@ -371,13 +451,19 @@ ora_genes |>
   ggplot(aes(x = estimate, y = symbol, fill = chrom)) +
   geom_col(width = 0.6) +
   geom_vline(xintercept = 0, linetype = "dashed", colour = "#586e75") +
-  scale_fill_manual(values = c("X" = col_female, "Y" = col_male)) +
+  geom_text(aes(label = round(estimate, 1),
+                hjust = if_else(estimate > 0, -0.2, 1.2)),
+            size = 4, fontface = "bold", color = "#eee8d5") +
+  scale_fill_manual(values = c("X" = col_female, "Y" = col_male),
+                    labels = c("X" = "chrX", "Y" = "chrY")) +
+  scale_x_continuous(expand = expansion(mult = 0.2)) +
   labs(title = "Genes driving the enrichment",
        x = "log2 fold change (male vs female)",
        y = NULL,
-       fill = "Chromosome") +
+       fill = NULL) +
   theme_moon() +
   theme(legend.position = "top",
+        axis.text.y = element_text(color = "#eee8d5", face = "bold"),
         panel.grid.major.x = element_line(color = "#0f4552",
                                           linewidth = 0.4),
         panel.grid.major.y = element_blank())
@@ -386,8 +472,9 @@ ora_genes |>
 :::::
 
 ::: {style="font-size: 0.6em;"}
-3 enriched processes, all **demethylation**, driven by 4 genes that form **X–Y pairs** (KDM5C/KDM5D, KDM6A/UTY)
+The enrichment in **demethylation**-related processes is driven by four genes on the sex chromosomes: [KDM5C]{style="color: #E0787F; font-weight: bold;"} and [KDM6A]{style="color: #E0787F; font-weight: bold;"} (X), [KDM5D]{style="color: #4F9FC4; font-weight: bold;"} and [UTY]{style="color: #4F9FC4; font-weight: bold;"} (Y)
 :::
+
 
 ------------------------------------------------------------------------
 
