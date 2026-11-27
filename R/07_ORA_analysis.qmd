@@ -7,9 +7,9 @@ format: html
 
 ```{r}
 #| message: false
+
 library("tidyverse")
 library("msigdbr")
-library("purrr")
 ```
 
 ## Load data
@@ -18,7 +18,6 @@ The analysis is based on the results of the differential gene expression analysi
 
 ```{r}
 lm_results <- read_tsv("../data/05_dat_lm_results.tsv.gz")
-
 ```
 
 ## Load gene sets
@@ -29,7 +28,7 @@ bp_df <- msigdbr(species = "human",
                  subcategory = "GO:BP") 
 ```
 
-Using the `msigdbr` package I retrieve gene sets from the C5 collection, which contains Gene Ontology gene sets. In particular, I download the GO Biological Process (GO:BP) subcollection.
+Using the `msigdbr` package we retrieve gene sets from the C5 collection, which contains Gene Ontology gene sets. In particular, we download the GO Biological Process (GO:BP) subcollection.
 
 ## Prepare gene identifiers
 
@@ -43,24 +42,24 @@ lm_results |>
   head()
 ```
 
-Since the Ensembl gene identifiers in `lm_results` contain a version suffix and those in `bp_df` don't, I create a new column called `gene_id` by removing the version suffix from each identifier. This allows the gene identifiers to be matched between the two datasets.
+Since the Ensembl gene identifiers in `lm_results` contain a version suffix and those in `bp_df` don't, we create a new column called `gene_id` by removing the version suffix from each identifier. This allows the gene identifiers to be matched between the two datasets.
 
 ```{r}
 lm_results <- lm_results |>
-  mutate(gene_id = str_remove(gene, "\\..*$")) 
+  mutate(gene_id = str_remove(gene, "\\..*$"))
 
-lm_results |> 
-  select(gene) |>
+lm_results |>
+  select(gene_id) |>
   head()
 ```
 
 ## DEGs and background
 
-To perform ORA, I need two sets of genes: one containing the DE genes (the ones with a q_value lower than 0.05) and one containing all the gene tested in the DE analysis (background).
+To perform ORA, we need two sets of genes: one containing the DE genes (the ones with a q_value lower than 0.05) and one containing all the gene tested in the DE analysis (background). Unlike the volcano plot of the previous section, in the ORA we select genes based only on their significance and not on their effect size because in this analysis we want to identify biological processes enriched among all statistically significant genes, including those with relatively small expression changes.
 
 ```{r}
-deg_genes <- lm_results |> 
-  filter(q_value < 0.05) |> 
+deg_genes <- lm_results |>
+  filter(q_value < 0.05) |>
   pull(gene_id) |>
   unique()
 
@@ -76,14 +75,18 @@ A total of 53 genes were deferentially expressed among the 20,416 genes tested.
 
 ## Define the ORA gene sets
 
-To perform ORA, I first restrict the analysis to genes that are represented in both the differential expression results and the GO:BP gene sets.
+To perform ORA, we first restrict the analysis to genes that are represented in both the differential expression results and the GO:BP gene sets.
 
 ```{r}
-deg_go <- intersect(deg_genes, 
-                    bp_df$ensembl_gene)
-background_go <- intersect(background_genes, 
-                           bp_df$ensembl_gene)
+deg_go <- intersect(
+  deg_genes,
+  bp_df$ensembl_gene
+)
 
+background_go <- intersect(
+  background_genes,
+  bp_df$ensembl_gene
+)
 
 length(deg_go)
 length(background_go)
@@ -93,18 +96,18 @@ Only 24 out of 53 DEGs and 12,289 out of 20,416 background genes are represented
 
 ## Filter gene sets
 
-I filter the GO:BP gene sets to retain only genes included in the background gene set.
+We filter the GO:BP gene sets to retain only genes included in the background gene set.
 
 ```{r}
 bp_df_filtered <- bp_df |>
   filter(ensembl_gene %in% background_go) |>
   select(gs_name, ensembl_gene) |>
-  unique()
+  distinct()
 ```
 
 ## Filter gene sets by size
 
-To avoid including gene sets that are too small or too large, I restrict the analysis to gene sets containing between 10 and 500 genes from the background, following the approach presented in the course 22150 Introduction to Systems Biology (Vitting-Seerup, 2025).
+To avoid including gene sets that are too small or too large, we restrict the analysis to gene sets containing between 10 and 500 genes from the background, following the approach presented in the course 22150 Introduction to Systems Biology (Vitting-Seerup, 2025).
 
 -   Small gene sets may produce unstable enrichment results because even a few overlapping genes can have a strong influence on the statistical test.
 
@@ -114,17 +117,17 @@ To avoid including gene sets that are too small or too large, I restrict the ana
 bp_df_group_size <- bp_df_filtered |>
   group_by(gs_name) |>
   summarise(
-    gene_set_size = n_distinct(ensembl_gene),
-    .groups = "drop"
-  ) |> 
+    gene_set_size = n_distinct(ensembl_gene)
+  ) |>
+  ungroup() |>
   filter(gene_set_size >= 10, gene_set_size <= 500)
 ```
 
-Now that I have deleted the extreme groups, I filter the original `bp_df_filtered`.
+Now that we have deleted the extreme groups, we filter the original `bp_df_filtered`.
 
 ```{r}
 bp_df_filtered <- bp_df_filtered |>
-  filter(gs_name %in% bp_df_group_size$gs_name)
+  semi_join(bp_df_group_size, by = "gs_name")
 ```
 
 ## How many DEG in each process?
@@ -134,14 +137,14 @@ deg_overlap <- bp_df_filtered |>
   filter(ensembl_gene %in% deg_go) |>
   group_by(gs_name) |>
   summarise(
-    n_DEGs = n_distinct(ensembl_gene),
-    .groups = "drop"
-  )
+    n_DEGs = n_distinct(ensembl_gene)
+  ) |>
+  ungroup()
 ```
 
 ## Fisher test
 
-To perform the over-representation analysis, I construct a contingency table for each gene set. The table contains four categories:
+To perform the over-representation analysis, we construct a contingency table for each gene set. The table contains four categories:
 
 -   **a:** DEGs inside the gene set.
 
@@ -163,26 +166,23 @@ ora_table <- bp_df_group_size |>
   )
 ```
 
-I then apply Fisher's exact test to each gene set to determine whether DEGs are over-represented compared with the background. The alternative hypothesis is set to `"greater"`, meaning that we test for enrichment of DEGs within each gene set.
+We then apply Fisher's exact test to each gene set to determine whether DEGs are over-represented compared with the background. The alternative hypothesis is set to `"greater"`, meaning that we test for enrichment of DEGs within each gene set.
 
 ```{r}
 ora_results <- ora_table |>
+  rowwise() |>
   mutate(
-    p_value = pmap_dbl(
-      list(a, b, c, d),
-      \(a, b, c, d) {
-        fisher.test(
-          matrix(c(a, b, c, d), nrow = 2, byrow = TRUE),
-          alternative = "greater"
-        )$p.value
-      }
-    )
-  )
+    p_value = fisher.test(
+      matrix(c(a, b, c, d), nrow = 2, byrow = TRUE),
+      alternative = "greater"
+    )$p.value
+  ) |>
+  ungroup()
 ```
 
 ## Multiple test correction
 
-Since multiple gene sets are tested, I adjust the p-values using the Benjamini–Hochberg (BH) method to control the false discovery rate (FDR).
+Since multiple gene sets are tested, we adjust the p-values using the Benjamini–Hochberg (BH) method to control the false discovery rate (FDR).
 
 ```{r}
 ora_results <- ora_results |>
@@ -193,7 +193,7 @@ ora_results <- ora_results |>
 
 ## Significant gene sets
 
-I select the significantly enriched gene sets using an adjusted p-value (q-value) threshold of 0.05 and rank them by increasing q-value.
+We select the significantly enriched gene sets using an adjusted p-value (q-value) threshold of 0.05 and rank them by increasing q-value.
 
 ```{r}
 significant_pathways <- ora_results |>
@@ -203,16 +203,14 @@ significant_pathways <- ora_results |>
 
 ## **Identify and annotate enriched genes**
 
-Finally, I identify the DEGs belonging to the significantly enriched gene sets and annotate them using the results from the differential expression analysis. This allows me to retrieve the gene symbols, log2 fold change estimates and adjusted p-values for each gene.
+Finally, we identify the DEGs belonging to the significantly enriched gene sets and annotate them using the results from the differential expression analysis. This allows me to retrieve the gene symbols, log2 fold change estimates and adjusted p-values for each gene.
 
 ```{r}
 enriched_genes_annotated <- bp_df_filtered |>
-  filter(
-    gs_name %in% significant_pathways$gs_name,
-    ensembl_gene %in% deg_go
-  ) |>
+  filter(ensembl_gene %in% deg_go) |>
+  semi_join(significant_pathways, by = "gs_name") |>
   select(gs_name, ensembl_gene) |>
-  unique() |>
+  distinct() |>
   left_join(
     lm_results |>
       select(gene_id, symbol, estimate, q_value),
@@ -231,10 +229,12 @@ significant_pathways |>
     pathway = str_replace_all(pathway, "_", " "),
     log10_q = -log10(q_value)
   ) |>
-  ggplot(aes(
-    x = log10_q,
-    y = reorder(pathway, log10_q)
-  )) +
+  ggplot(
+    aes(
+      x = log10_q,
+      y = fct_reorder(pathway, log10_q)
+    )
+  ) +
   geom_col(fill = "steelblue", width = 0.7) +
   labs(
     title = "Significantly enriched Biological Processes",
@@ -247,23 +247,18 @@ significant_pathways |>
   )
 ```
 
-Three enriched processes are: histone lysine demethylation, protein demethylation and demethylation (significant, but with a lower statistical significance than the other two).
-
-These pathways are closely related and, from `enriched_genes_annotated`, they share the same four genes: KDM5C, KDM5D, KDM6A and UTY. Therefore, they should not be interpreted as three independent biological findings but instead they collectively indicate an enrichment of demethylation-related processes, particularly histone lysine demethylation.
-
-Overall, these findings suggest potential sex-related differences in epigenetic regulation. However, ORA identifies over-representation and does not provide information about whether the activity of these biological processes is increased or decreased.
-
 ## **Chromosome annotation**
 
 To further investigate the genes contributing to the enriched processes, I annotate their chromosomal locations using the GENCODE gene annotation dataset.
 
 ```{r}
-
-gene_annotation <- read_tsv("../data/_raw/gencode_v36_gene_probemap.tsv")
+gene_annotation <- read_tsv(
+  "../data/_raw/gencode_v36_gene_probemap.tsv"
+  )
 
 genes_w_chr <- enriched_genes_annotated |>
   select(ensembl_gene, symbol, estimate) |>
-  unique() |>
+  distinct() |>
   left_join(
     gene_annotation |>
       mutate(gene_id = str_remove(id, "\\..*$")) |>
@@ -273,46 +268,61 @@ genes_w_chr <- enriched_genes_annotated |>
 
 genes_w_chr |>
   select(symbol, chrom, estimate)
-
 ```
 
 ```{r}
 ORA_plot2 <- genes_w_chr |>
-  ggplot(aes(
-    x = estimate,
-    y = reorder(symbol, estimate),
-    fill = chrom
-  )) +
-  scale_x_continuous(
-  limits = c(-1, 8),
-  breaks = seq(-1, 8, by = 1)
-)+
-  labs(
-  title = "Log2 fold change of enriched DEGs by chromosomes",
-  x = "Log2 fold change",
-  y = "",
-  fill = "Chromosome"
-)+
-  geom_vline(
-  xintercept = 0,
-  linetype = "dashed",
-  color = "black"
-) +
-  theme(
-  plot.title = element_text(hjust = 0.5),
-  legend.position = "right"
-)+
+  ggplot(
+    aes(
+      x = estimate,
+      y = fct_reorder(symbol, estimate),
+      fill = chrom
+    )
+  ) +
   geom_col(width = 0.7) +
-  theme_bw() 
+  geom_vline(
+    xintercept = 0,
+    linetype = "dashed",
+    color = "black"
+  ) +
+  scale_x_continuous(
+    limits = c(-1, 8),
+    breaks = seq(-1, 8, by = 1)
+  ) +
+  labs(
+    title = "Log2 fold change of enriched DEGs by chromosomes",
+    x = "Log2 fold change",
+    y = NULL,
+    fill = "Chromosome"
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "right"
+  )
 
 ORA_plot2
-  
-ggsave(filename = "../results/07_ORA_plot2.png",
-       plot = ORA_plot2)
 
-write_tsv(significant_pathways, "../data/07_dat_ora_pathways.tsv")
-write_tsv(genes_w_chr, "../data/07_dat_ora_genes.tsv")
+ggsave(
+  filename = "../results/07_ORA_plot2.png",
+  plot = ORA_plot2
+)
+
+write_tsv(
+  significant_pathways,
+  "../data/07_dat_ora_pathways.tsv"
+)
+
+write_tsv(
+  genes_w_chr,
+  "../data/07_dat_ora_genes.tsv"
+)
 ```
 
-All four DEGs contributing to the significantly enriched processes are located on the sex chromosomes. KDM5C and KDM6A are located on the X chromosome, whereas KDM5D and UTY are located on the Y chromosome.\
-This observation suggests that the enrichment in demethylation-related processes is driven by genes located on the sex chromosomes, potentially highlighting differences in epigenetic regulation between males and females.
+## Conclusions
+
+Three enriched processes identified: histone lysine demethylation, protein demethylation and demethylation (significant, but with a lower statistical significance than the other two).
+
+These pathways are closely related and, from `enriched_genes_annotated`, they share the same four genes: KDM5C, KDM5D, KDM6A and UTY. Therefore, they should not be interpreted as three independent biological findings but rather as evidence of enrichment in demethylation-related processes, particularly histone lysine demethylation.
+
+All four genes are located on the sex chromosomes. As expected, the Y-linked genes KDM5D and UTY show higher expression in males, while the X-linked genes KDM5C and KDM6A show higher expression in females. These differences suggest sex-related variation in the expression of epigenetic regulators, which may contribute to the observed enrichment of demethylation-related processes.
